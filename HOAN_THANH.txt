@@ -1,0 +1,194 @@
+═══════════════════════════════════════════════════════════════════════
+🎉 DỰ ÁN VIDEO DOWNLOADER - HOÀN THÀNH!
+═══════════════════════════════════════════════════════════════════════
+
+✅ Đã cài đặt đầy đủ:
+   • Python 3.12 + Virtual Environment
+   • FFmpeg 8.0.1 (merge video + audio)
+   • yt-dlp (engine tải video)
+   • customtkinter (GUI)
+   • Tất cả dependencies
+
+✅ Đã tối ưu chất lượng video:
+   • Ưu tiên BITRATE CAO NHẤT thay vì codec
+   • FFmpeg merge không re-encode (giữ nguyên chất lượng)
+   • Audio 320kbps (cực cao)
+   • Tự động chọn format tốt nhất
+
+✅ Hỗ trợ 4 nền tảng:
+   • YouTube (8K, 4K, 1080p60, HDR)
+   • TikTok (1080p)
+   • Facebook (1080p)
+   • Douyin (1080p)
+
+═══════════════════════════════════════════════════════════════════════
+🚀 CÁCH CHẠY (4 CÁCH - Chọn 1)
+═══════════════════════════════════════════════════════════════════════
+
+1️⃣  SCRIPT TỰ ĐỘNG (Đơn giản nhất!)
+    ./start.sh
+
+2️⃣  CLI - Dòng lệnh (Khuyến nghị!)
+    source .venv/bin/activate
+    python video_downloader_cli.py
+
+3️⃣  GUI - Giao diện (Cần Tkinter)
+    source .venv/bin/activate
+    python video_downloader.py
+
+4️⃣  QUICK DOWNLOAD (Tải nhanh 1 video)
+    source .venv/bin/activate
+    python quick_download.py "URL_VIDEO" best
+
+═══════════════════════════════════════════════════════════════════════
+⚡ VÍ DỤ THỰC TẾ
+═══════════════════════════════════════════════════════════════════════
+
+# Tải 1 video YouTube:
+python quick_download.py "https://www.youtube.com/watch?v=Ztrj8UIDMQY"
+
+# Hoặc dùng CLI với menu:
+python video_downloader_cli.py
+
+# Tải với chất lượng cụ thể:
+python quick_download.py "https://youtu.be/VIDEO_ID" 1080p
+
+═══════════════════════════════════════════════════════════════════════
+📂 VIDEO TẢI VỀ
+═══════════════════════════════════════════════════════════════════════
+
+Thư mục: ./downloads/
+
+Xem danh sách:  ls -lh downloads/
+Mở thư mục:     open downloads/
+Xem chi tiết:   ffprobe "downloads/video.mp4"
+
+═══════════════════════════════════════════════════════════════════════
+🎯 CHẤT LƯỢNG VIDEO
+═══════════════════════════════════════════════════════════════════════
+
+✅ best    → Bitrate cao nhất, tự động chọn (KHUYẾN NGHỊ!) ⭐⭐⭐⭐⭐
+✅ 4k      → 2160p (nếu có)                              ⭐⭐⭐⭐
+✅ 1080p   → Full HD                                     ⭐⭐⭐⭐
+✅ 720p    → HD                                          ⭐⭐⭐
+✅ 480p    → SD (tiết kiệm)                              ⭐⭐
+
+QUAN TRỌNG: Luôn chọn "best" để có video rõ nét nhất!
+
+═══════════════════════════════════════════════════════════════════════
+🔧 TÍNH NĂNG
+═══════════════════════════════════════════════════════════════════════
+
+✅ Tải video theo link (YouTube, TikTok, Facebook, Douyin)
+✅ Theo dõi kênh tự động (max 3 kênh/nền tảng)
+✅ Quét video mới mỗi 5 phút
+✅ Lịch sử tải xuống (database SQLite)
+✅ Tránh tải trùng lặp
+✅ Thanh tiến trình real-time
+✅ Merge video + audio (FFmpeg)
+✅ Chọn chất lượng linh hoạt
+✅ Xử lý lỗi tự động
+
+═══════════════════════════════════════════════════════════════════════
+💡 MẸO HỮU ÍCH
+═══════════════════════════════════════════════════════════════════════
+
+• Tải nhanh 1 video:
+  python quick_download.py "URL"
+
+• Xem format có sẵn của video:
+  yt-dlp -F "URL"
+
+• Xem thông tin video đã tải:
+  ffprobe -v error -show_format -show_streams "video.mp4"
+
+• Update yt-dlp (nếu lỗi):
+  pip install --upgrade yt-dlp
+
+• Tải playlist:
+  Dùng CLI, dán link playlist, tất cả video sẽ được tải!
+
+═══════════════════════════════════════════════════════════════════════
+🐛 XỬ LÝ LỖI
+═══════════════════════════════════════════════════════════════════════
+
+❌ Tkinter not found
+   → brew install python-tk@3.12
+   → Hoặc dùng CLI: python video_downloader_cli.py
+
+❌ FFmpeg not found
+   → brew install ffmpeg
+
+❌ Video bị mờ/vỡ
+   → Chọn chất lượng "best"
+   → Xem: FIX_BLUR_VIDEO.md
+
+❌ Module not found
+   → pip install -r requirements.txt
+
+❌ Lỗi tải video
+   → Kiểm tra URL có đúng không
+   → Thử: yt-dlp -F "URL" để xem format
+   → Update: pip install --upgrade yt-dlp
+
+═══════════════════════════════════════════════════════════════════════
+📚 TÀI LIỆU HƯỚNG DẪN
+═══════════════════════════════════════════════════════════════════════
+
+HUONG_DAN_CHAY.md    → Hướng dẫn chi tiết cách chạy
+FIX_BLUR_VIDEO.md    → Giải thích tối ưu chất lượng (QUAN TRỌNG!)
+README.md            → Tổng quan dự án
+QUALITY_GUIDE.md     → Hướng dẫn chất lượng video
+FIX_TKINTER.md       → Khắc phục lỗi Tkinter
+UPDATE_LOG.md        → Lịch sử cập nhật
+USAGE_GUIDE.txt      → Hướng dẫn sử dụng
+
+═══════════════════════════════════════════════════════════════════════
+📊 CÁC FILE QUAN TRỌNG
+═══════════════════════════════════════════════════════════════════════
+
+Chạy dự án:
+  start.sh                   → Script tự động (khuyến nghị)
+  video_downloader_cli.py    → CLI (menu console)
+  video_downloader.py        → GUI (giao diện)
+  quick_download.py          → Tải nhanh 1 video
+
+Core:
+  downloader_core.py         → Logic tải video (yt-dlp)
+  database.py                → Quản lý lịch sử tải
+  config.py                  → Cấu hình
+
+Test:
+  test_quality.py            → Test chất lượng
+  test_user_video.py         → Test tải video
+  quick_download.py          → Download nhanh
+
+═══════════════════════════════════════════════════════════════════════
+🎬 KẾT LUẬN
+═══════════════════════════════════════════════════════════════════════
+
+✅ Dự án hoàn chỉnh, chạy ổn định
+✅ Video chất lượng cao, không bị mờ/vỡ
+✅ Hỗ trợ đa nền tảng
+✅ Theo dõi kênh tự động
+✅ Dễ sử dụng (CLI + GUI)
+
+🚀 BẮT ĐẦU NGAY:
+
+    ./start.sh
+
+Hoặc:
+
+    source .venv/bin/activate
+    python video_downloader_cli.py
+
+═══════════════════════════════════════════════════════════════════════
+
+Made with ❤️ by GitHub Copilot
+Version: 2.1 - Ultra High Quality Edition
+Date: March 13, 2026
+
+Happy Downloading! 🎬✨
+
+═══════════════════════════════════════════════════════════════════════
+

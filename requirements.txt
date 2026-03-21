@@ -1,0 +1,9 @@
+customtkinter==5.2.1
+requests>=2.31.0
+pillow>=10.0.0
+yt-dlp>=2023.12.30
+packaging>=24.0
+pytest>=8.0.0
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib

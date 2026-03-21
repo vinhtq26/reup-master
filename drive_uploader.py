@@ -1,0 +1,138 @@
+"""Google Drive uploader helper.
+
+- Sử dụng OAuth2 (credentials.json) để tạo service Drive.
+- Tự động lưu token vào token.json để lần sau dùng lại.
+- Hỗ trợ tạo cây thư mục theo cấu trúc local (Platform/Channel/...)
+
+YÊU CẦU:
+- Đặt file credentials.json ở cùng thư mục project (hoặc chỉnh CREDENTIALS_FILE bên dưới).
+- Cài thư viện: google-api-python-client, google-auth-httplib2, google-auth-oauthlib
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Optional
+
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+
+# Chỉ cần quyền làm việc với Drive của user
+SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+
+# Các file cấu hình OAuth/token
+BASE_DIR = os.path.dirname(__file__)
+CREDENTIALS_FILE = os.path.join(BASE_DIR, "credentials.json")
+TOKEN_FILE = os.path.join(BASE_DIR, "token.json")
+
+
+def get_drive_service():
+    """Tạo service Google Drive, tự xử lý refresh token / login lần đầu.
+
+    Trả về: googleapiclient.discovery.Resource
+    """
+    creds: Optional[Credentials] = None
+
+    if os.path.exists(TOKEN_FILE):
+        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            if not os.path.exists(CREDENTIALS_FILE):
+                raise FileNotFoundError(
+                    f"Không tìm thấy {CREDENTIALS_FILE}. Hãy tải credentials.json từ Google Cloud Console và đặt cạnh project."
+                )
+            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+            creds = flow.run_local_server(port=0)
+
+        with open(TOKEN_FILE, "w", encoding="utf-8") as token:
+            token.write(creds.to_json())
+
+    service = build("drive", "v3", credentials=creds)
+    return service
+
+
+def find_or_create_folder(service, name: str, parent_id: Optional[str] = None) -> str:
+    """Tìm folder theo tên trong parent_id; nếu không có thì tạo mới.
+
+    Lưu ý: Để đơn giản, nếu có nhiều folder trùng tên, hàm sẽ dùng folder đầu tiên.
+    """
+    # Escape single quotes in folder name for the Drive query
+    safe_name = name.replace("'", "\\'")
+    query_parts = [
+        "mimeType='application/vnd.google-apps.folder'",
+        f"name='{safe_name}'",
+    ]
+    if parent_id:
+        query_parts.append(f"'{parent_id}' in parents")
+    else:
+        query_parts.append("'root' in parents")
+
+    query = " and ".join(query_parts)
+
+    resp = service.files().list(q=query, spaces="drive", fields="files(id, name)", pageSize=1).execute()
+    files = resp.get("files", [])
+    if files:
+        return files[0]["id"]
+
+    # Tạo folder mới
+    file_metadata = {
+        "name": name,
+        "mimeType": "application/vnd.google-apps.folder",
+    }
+    if parent_id:
+        file_metadata["parents"] = [parent_id]
+
+    folder = service.files().create(body=file_metadata, fields="id").execute()
+    return folder["id"]
+
+
+def ensure_folder_tree(service, path_parts, root_folder_name: str = "VideoDownloaderRoot") -> str:
+    """Đảm bảo tồn tại cây thư mục trên Drive theo path_parts.
+
+    Ví dụ:
+        path_parts = ["YouTube", "KenhA"]
+        root_folder_name = "VideoDownloaderRoot"
+
+    Trả về: ID của folder cuối cùng (KenhA).
+    """
+    # Tạo/tìm root riêng cho app để đỡ lẫn với các folder khác của user
+    current_parent = find_or_create_folder(service, root_folder_name, parent_id=None)
+
+    for part in path_parts:
+        if not part:
+            continue
+        current_parent = find_or_create_folder(service, part, parent_id=current_parent)
+
+    return current_parent
+
+
+def upload_file_to_drive(local_path: str, folder_parts: list[str]) -> Optional[str]:
+    """Upload file local_path lên Drive, theo cây thư mục folder_parts.
+
+    - folder_parts: ví dụ ["YouTube", "KenhA"]
+    - Tự động tạo root "VideoDownloaderRoot" nếu chưa có.
+
+    Trả về: file_id trên Drive (hoặc None nếu lỗi).
+    """
+    if not os.path.exists(local_path):
+        raise FileNotFoundError(local_path)
+
+    service = get_drive_service()
+
+    parent_id = ensure_folder_tree(service, folder_parts)
+
+    file_metadata = {
+        "name": os.path.basename(local_path),
+        "parents": [parent_id],
+    }
+
+    media = MediaFileUpload(local_path, resumable=True)
+
+    created = service.files().create(body=file_metadata, media_body=media, fields="id").execute()
+    return created.get("id")

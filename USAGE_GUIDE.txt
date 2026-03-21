@@ -1,0 +1,251 @@
+🎬 VIDEO DOWNLOADER - HƯỚNG DẪN SỬ DỤNG HOÀN CHỈNH
+================================================================
+
+✅ ĐÃ TẠO XONG TẤT CẢ CÁC FILE!
+
+📂 CẤU TRÚC DỰ ÁN:
+-------------------
+FastAPIProject/
+├── video_downloader.py       ← Ứng dụng GUI (cần tkinter)
+├── video_downloader_cli.py   ← Ứng dụng CLI (không cần GUI) ⭐ DÙNG CÁI NÀY
+├── downloader_core.py        ← Logic tải video
+├── database.py               ← Quản lý database SQLite
+├── config.py                 ← Cấu hình ứng dụng
+├── requirements.txt          ← Danh sách thư viện
+├── run.sh                    ← Script khởi chạy nhanh
+├── quick_start.py            ← Hướng dẫn nhanh
+├── README.md                 ← Tài liệu chi tiết
+├── FIX_TKINTER.md            ← Hướng dẫn sửa lỗi tkinter
+├── USAGE_GUIDE.txt           ← File này
+├── download_history.db       ← Database (tự động tạo)
+└── downloads/                ← Thư mục video (tự động tạo)
+
+
+🚀 CÁCH KHỞI CHẠY:
+------------------
+
+✅ PHƯƠNG ÁN 1: SỬ DỤNG CLI (KHÔNG CẦN GUI - KHUYẾN NGHỊ)
+==========================================================
+
+1. Mở Terminal tại thư mục dự án
+2. Kích hoạt môi trường ảo:
+
+   source .venv/bin/activate
+
+3. Chạy ứng dụng CLI:
+
+   python video_downloader_cli.py
+
+
+📋 CÁC TÍNH NĂNG CLI:
+---------------------
+
+1️⃣  TẢI VIDEO THEO LINK
+   - Chọn menu "1"
+   - Dán link video (YouTube, TikTok, Douyin, Facebook)
+   - Chờ tải xong!
+
+2️⃣  QUẢN LÝ KÊNH THEO DÕI
+   - Chọn menu "2"
+   - Thêm/xóa kênh cần theo dõi
+   - Giới hạn: 3 kênh/nền tảng
+
+3️⃣  BẬT THEO DÕI TỰ ĐỘNG
+   - Chọn menu "3"
+   - Ứng dụng sẽ tự động kiểm tra và tải video mới
+   - Kiểm tra mỗi 5 phút
+   - Nhấn Ctrl+C để dừng
+
+4️⃣  XEM THỐNG KÊ
+   - Chọn menu "4"
+   - Xem số video đã tải, phân chia theo nền tảng
+
+5️⃣  CÀI ĐẶT
+   - Chọn menu "5"
+   - Thay đổi thư mục lưu video
+
+
+⚙️ PHƯƠNG ÁN 2: SỬ DỤNG GUI (CẦN CÀI TKINTER)
+==============================================
+
+Nếu muốn dùng giao diện đồ họa:
+
+1. Cài tkinter (xem file FIX_TKINTER.md)
+2. Chạy:
+
+   python video_downloader.py
+
+
+📝 VÍ DỤ SỬ DỤNG CLI:
+----------------------
+
+$ python video_downloader_cli.py
+
+🎬 VIDEO DOWNLOADER CLI
+========================
+
+📋 MENU CHÍNH:
+1. 📥 Tải video theo link
+2. 👁️  Quản lý kênh theo dõi
+3. ▶️  Bắt đầu/Dừng theo dõi tự động
+4. 📊 Xem thống kê
+5. ⚙️  Cài đặt
+0. 🚪 Thoát
+
+👉 Chọn chức năng: 1
+
+🔗 Nhập URL video: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+
+⏳ Đang tải video...
+✅ THÀNH CÔNG!
+📝 Tiêu đề: Rick Astley - Never Gonna Give You Up
+💾 Lưu tại: /downloads/Rick Astley - Never Gonna Give You Up.mp4
+
+
+🌐 CÁC NỀN TẢNG HỖ TRỢ:
+------------------------
+
+✅ YouTube
+   - Video: https://www.youtube.com/watch?v=VIDEO_ID
+   - Kênh:  https://www.youtube.com/@channelname
+   - Playlist: https://www.youtube.com/playlist?list=...
+
+✅ TikTok
+   - Video: https://www.tiktok.com/@user/video/1234567890
+   - Kênh:  https://www.tiktok.com/@username
+
+✅ Facebook
+   - Video: https://www.facebook.com/watch/?v=1234567890
+   - Trang: https://www.facebook.com/pagename
+
+✅ Douyin
+   - Video: https://www.douyin.com/video/1234567890
+   - Kênh:  https://www.douyin.com/user/...
+
+
+⚙️ TÙY CHỈNH CẤU HÌNH:
+-----------------------
+
+Chỉnh sửa file config.py:
+
+# Số kênh tối đa theo dõi cho mỗi nền tảng
+MAX_CHANNELS_PER_PLATFORM = 3
+
+# Thời gian kiểm tra video mới (giây)
+CHECK_INTERVAL = 300  # 5 phút
+
+# Số video kiểm tra mỗi lần quét
+MAX_VIDEOS_TO_CHECK = 10
+
+# Định dạng video
+DEFAULT_VIDEO_FORMAT = "best[ext=mp4]/best"
+
+
+🐛 XỬ LÝ LỖI:
+--------------
+
+❌ Lỗi: No module named 'yt_dlp'
+→ Cài đặt: pip install -r requirements.txt
+
+❌ Lỗi: No module named '_tkinter' (chỉ với GUI)
+→ Xem file: FIX_TKINTER.md
+→ Hoặc dùng CLI: python video_downloader_cli.py
+
+❌ Lỗi: Unable to download video
+→ Kiểm tra kết nối internet
+→ Cập nhật yt-dlp: pip install yt-dlp --upgrade
+→ Thử link khác
+
+❌ Video không có âm thanh
+→ Cài FFmpeg: brew install ffmpeg
+
+
+💡 MẸO SỬ DỤNG:
+----------------
+
+✓ Dùng CLI để tránh vấn đề với tkinter
+✓ Chọn thư mục lưu có đủ dung lượng
+✓ Video HD/4K rất nặng, cần nhiều thời gian tải
+✓ Không theo dõi quá nhiều kênh cùng lúc
+✓ Kiểm tra quyền sử dụng video trước khi tải
+✓ Tuân thủ điều khoản của các nền tảng
+
+
+📊 DATABASE:
+------------
+
+Ứng dụng sử dụng SQLite để lưu trữ:
+- Lịch sử video đã tải (tránh tải trùng)
+- Danh sách kênh đang theo dõi
+- Thống kê tải xuống
+
+File: download_history.db (tự động tạo)
+
+
+🔒 BẢO MẬT:
+-----------
+
+✓ Chạy hoàn toàn offline sau khi cài đặt
+✓ Không thu thập dữ liệu người dùng
+✓ Database lưu local trên máy
+✓ Không kết nối server bên thứ ba
+
+
+⚡ KHẮC PHỤC SỰ CỐ:
+-------------------
+
+1. Xóa database và tạo lại:
+   rm download_history.db
+   python video_downloader_cli.py
+
+2. Cài lại dependencies:
+   pip install -r requirements.txt --force-reinstall
+
+3. Cập nhật yt-dlp:
+   pip install yt-dlp --upgrade
+
+4. Reset virtual environment:
+   deactivate
+   rm -rf .venv
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+
+
+📞 HỖ TRỢ:
+----------
+
+📖 Đọc README.md cho hướng dẫn chi tiết
+🔧 Xem FIX_TKINTER.md nếu gặp lỗi GUI
+💻 Dùng CLI để tránh vấn đề phức tạp
+🌐 Cập nhật yt-dlp thường xuyên
+
+
+⚠️ LƯU Ý QUAN TRỌNG:
+---------------------
+
+❗ Chỉ tải video bạn có quyền sử dụng
+❗ Tuân thủ bản quyền và điều khoản dịch vụ
+❗ Tool chỉ để học tập và sử dụng cá nhân
+❗ Không sử dụng cho mục đích thương mại
+❗ Tác giả không chịu trách nhiệm về việc lạm dụng
+
+
+🎉 BẮT ĐẦU NGAY:
+----------------
+
+# Kích hoạt môi trường
+source .venv/bin/activate
+
+# Chạy CLI
+python video_downloader_cli.py
+
+# Hoặc GUI (nếu đã cài tkinter)
+python video_downloader.py
+
+
+================================================================
+Made with ❤️  by Python & yt-dlp
+🌟 Happy Downloading!
+================================================================
+

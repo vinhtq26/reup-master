@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Environment / secrets
+.env
+*.env
+
+# Local user settings / tokens (do not commit)
+user_settings.json
+token.json
+credential.json
+credentials.json
+
+# Databases / local state
+*.db
+*.sqlite
+*.sqlite3
+
+# Downloads / generated media
+downloads/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+
+# Pytest
+.pytest_cache/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# FFmpeg/temp artifacts
+*.part
+*.ytdl
+*.tmp
+
