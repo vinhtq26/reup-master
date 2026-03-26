@@ -568,7 +568,7 @@ class VideoDownloader:
         print("[DEBUG] Channel name unknown for url:", url)
         return "unknown"
 
-    def process_and_upload(self, url: str, split: bool = False, extract_audio: bool = False, progress_callback: Callable = None, quality: str = "best", monitor=None, channel_url: str = None) -> Dict:
+    def process_and_upload(self, url: str, split: bool = False, extract_audio: bool = False, progress_callback: Callable = None, quality: str = "best", monitor=None, channel_url: str = None, platform: str = None, log_callback: Callable = None) -> Dict:
         """
         Luồng chuẩn: Tải video -> Chỉnh sửa -> (Cắt nếu cần) -> (Tách âm nếu chọn) -> Upload file đã chỉnh sửa/cắt và file âm thanh tách ra từ các file này.
         TUYỆT ĐỐI không upload file gốc hoặc tách âm từ file gốc.
@@ -644,19 +644,24 @@ class VideoDownloader:
         from drive_uploader import upload_file_to_drive
         uploaded_files = []
         # Lấy tên tài khoản cho upload (chỉ cho phép 'unknown' nếu thực sự không xác định được)
+        # Lấy platform nếu truyền vào (ưu tiên đối số), nếu không thì detect lại
+        platform_name = platform or getattr(self, 'platform', None) or self.detect_platform(url)
         channel_name_upload = self.get_channel_name(url)
         if not channel_name_upload or channel_name_upload.strip() == "":
             channel_name_upload = "unknown"
+        folder_parts = [platform_name, channel_name_upload]
+        # Lấy log_callback nếu truyền vào
+        log_callback = locals().get('log_callback') or locals().get('status_callback') or None
         for f in file_cac_phan:
-            file_id = upload_file_to_drive(f, [channel_name_upload])
+            file_id = upload_file_to_drive(f, folder_parts, status_callback=log_callback)
             uploaded_files.append({'file': f, 'drive_id': file_id})
         uploaded_audios = []
         for a in file_audio:
-            file_id = upload_file_to_drive(a, [channel_name_upload])
+            file_id = upload_file_to_drive(a, folder_parts, status_callback=log_callback)
             uploaded_audios.append({'file': a, 'drive_id': file_id})
         uploaded_mute_clean = None
         if file_mute_clean and os.path.exists(file_mute_clean):
-            file_id = upload_file_to_drive(file_mute_clean, [channel_name_upload])
+            file_id = upload_file_to_drive(file_mute_clean, folder_parts, status_callback=log_callback)
             uploaded_mute_clean = {'file': file_mute_clean, 'drive_id': file_id}
 
         return {

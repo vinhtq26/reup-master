@@ -328,50 +328,28 @@ class VideoDownloaderApp(ctk.CTk):
             return self._maybe_split_long_video(file_path)
 
     def _channel_monitor_postprocess(self, file_path: str, video_info: dict) -> str:
-        """Callback cho ChannelMonitor: edit + (nếu bật) upload Drive.
-
-        Nếu user bật split:
-        - Vẫn trả về part đầu tiên để lưu DB (giữ tương thích hiện tại).
-        - Upload lên Drive:
-          - Upload file gốc.
-          - Upload TẤT CẢ part sau khi cắt.
-          - Đồng thời tách asset (muted mp4 + mp3) cho từng part và upload lên Drive.
-            Các asset này sẽ bị xóa local ngay sau khi upload để tiết kiệm dung lượng.
-        """
-        # 1) master after basic edit (this is the 'Original' file)
+        """Callback cho ChannelMonitor: xử lý giống logic tải theo link (edit + split + upload nếu bật)."""
+        # Sử dụng đúng luồng xử lý như bên tải theo link
         try:
-            master_path = self._postprocess_master(file_path)
+            result = self.downloader.process_and_upload(
+                video_info.get("url", None) or video_info.get("video_url", None),
+                split=self.split_after_download,
+                extract_audio=self.edit_after_download,
+                progress_callback=None,
+                quality="best",
+                monitor=None,
+                channel_url=video_info.get("channel_url", None),
+                platform=video_info.get("platform", None),
+                log_callback=self.log_message
+            )
+            # Lấy file đầu ra (giống bên download_single_video)
+            uploaded_videos = result.get('video_files', [])
+            video_paths = [f['file'] for f in uploaded_videos]
+            processed_path = video_paths[0] if video_paths else file_path
+            return processed_path
         except Exception as e:
-            self.log_message(f"⚠️ Edit thất bại, giữ file gốc. Lỗi: {e}")
-            master_path = file_path
-
-        # 2) optional split (DB keeps part[0])
-        final_path = self._maybe_split_long_video(master_path)
-
-        if self.upload_to_drive:
-            platform = video_info.get("platform") or "Unknown"
-            channel_url = video_info.get("channel_url") or None
-            try:
-                if self.split_after_download:
-                    # Upload 'gốc' = master after basic edit
-                    if master_path and os.path.exists(master_path):
-                        self._upload_to_google_drive(master_path, platform=platform, channel_url=channel_url, category="Original")
-
-                    parts = self._collect_split_parts(final_path)
-                    if not parts and final_path and os.path.exists(final_path):
-                        parts = [final_path]
-
-                    for part in parts:
-                        self._upload_to_google_drive(part, platform=platform, channel_url=channel_url, category="Parts")
-                        self._extract_upload_and_cleanup_assets(part, platform=platform, channel_url=channel_url)
-                else:
-                    # No split: upload the master as Original
-                    if master_path and os.path.exists(master_path):
-                        self._upload_to_google_drive(master_path, platform=platform, channel_url=channel_url, category="Original")
-            except Exception as e:
-                self.log_message(f"⚠️ Upload Drive (monitor) lỗi (bỏ qua): {e}")
-
-        return final_path
+            self.log_message(f"⚠️ Xử lý hậu tải (monitor) lỗi: {e}")
+            return file_path
 
     def download_single_video(self):
         """Tải một video từ URL"""
