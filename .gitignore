@@ -13,7 +13,7 @@ ENV/
 *.env
 
 # Local user settings / tokens (do not commit)
-user_settings.json
+config/user_settings.json
 token.json
 credential.json
 credentials.json

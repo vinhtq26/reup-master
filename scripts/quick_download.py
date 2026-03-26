@@ -6,7 +6,7 @@ Ví dụ: python quick_download.py "https://youtube.com/watch?v=..." best
 """
 
 import sys
-from downloader_core import VideoDownloader
+from core.downloader_core import VideoDownloader
 
 def main():
     print("=" * 70)

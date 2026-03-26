@@ -3,7 +3,7 @@ Test tải video từ link YouTube của user
 URL: https://www.youtube.com/watch?v=Ztrj8UIDMQY&list=RDZtrj8UIDMQY&start_radio=1
 """
 
-from downloader_core import VideoDownloader
+from core.downloader_core import VideoDownloader
 
 # Link YouTube của user
 url = "https://www.youtube.com/watch?v=Ztrj8UIDMQY"

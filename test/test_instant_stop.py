@@ -4,8 +4,8 @@ Test instant stop - Kiểm tra việc dừng ngay lập tức khi nhấn Stop
 """
 
 import time
-from database import DownloadHistory
-from downloader_core import VideoDownloader, ChannelMonitor
+from core.database import DownloadHistory
+from core.downloader_core import VideoDownloader, ChannelMonitor
 
 print("=" * 70)
 print("🧪 TEST INSTANT STOP - DỪNG NGAY LẬP TỨC")
@@ -75,4 +75,3 @@ print("=" * 70)
 # Cleanup
 db.remove_monitored_channel(test_channel, "YouTube")
 db.close()
-

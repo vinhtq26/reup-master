@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from video_processing import VideoProcessor, VideoTransformSettings, ColorGradeSettings, FFmpegNotFoundError
+from core.video_processing import VideoProcessor, VideoTransformSettings, ColorGradeSettings, FFmpegNotFoundError
 
 
 @pytest.mark.skipif(os.environ.get("SKIP_FFMPEG_TESTS") == "1", reason="ffmpeg tests skipped")

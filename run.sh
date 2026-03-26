@@ -17,7 +17,7 @@ fi
 
 # Khởi chạy ứng dụng
 echo "🚀 Đang mở ứng dụng..."
-python video_downloader.py
+python gui.video_downloader.py
 
 # Deactivate khi thoát
 deactivate

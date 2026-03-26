@@ -6,9 +6,9 @@ Hỗ trợ: YouTube, TikTok, Douyin, Facebook
 import os
 import time
 
-from database import DownloadHistory
-from downloader_core import VideoDownloader, ChannelMonitor
-from config import SUPPORTED_PLATFORMS, MAX_CHANNELS_PER_PLATFORM, CHECK_INTERVAL
+from core.database import DownloadHistory
+from core.downloader_core import VideoDownloader
+from config.config import MAX_CHANNELS_PER_PLATFORM
 
 
 class VideoDownloaderCLI:

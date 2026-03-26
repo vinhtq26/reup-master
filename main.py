@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from video_downloader import VideoDownloaderApp
+from gui.video_downloader import VideoDownloaderApp
 
 app = FastAPI()
 

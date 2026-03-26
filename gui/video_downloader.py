@@ -9,22 +9,21 @@ import threading
 import os
 import time
 
-from database import DownloadHistory
-from downloader_core import VideoDownloader, ChannelMonitor
-from config import (
+from core.database import DownloadHistory
+from core.downloader_core import VideoDownloader, ChannelMonitor
+from config.config import (
     SUPPORTED_PLATFORMS,
     MAX_CHANNELS_PER_PLATFORM,
     CHECK_INTERVAL
 )
 # Cấu hình split video
-from config import SPLIT_IF_LONGER_THAN_SECONDS, SPLIT_SEGMENT_SECONDS
+from config.config import SPLIT_IF_LONGER_THAN_SECONDS, SPLIT_SEGMENT_SECONDS
 
 from user_settings import load_settings, save_settings, UserSettings
 
 # Thêm module xử lý video (FFmpeg)
-from video_processing import VideoProcessor, VideoTransformSettings
-from video_splitter import split_if_longer_than
-from drive_uploader import upload_file_to_drive
+from core.video_processing import VideoProcessor, VideoTransformSettings
+from core.video_splitter import split_if_longer_than
 
 
 class VideoDownloaderApp(ctk.CTk):

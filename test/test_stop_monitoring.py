@@ -3,8 +3,8 @@ Test script để kiểm tra chức năng dừng monitoring ngay lập tức
 """
 
 import time
-from database import DownloadHistory
-from downloader_core import VideoDownloader, ChannelMonitor
+from core.database import DownloadHistory
+from core.downloader_core import VideoDownloader, ChannelMonitor
 
 def test_stop_monitoring():
     """Test việc dừng monitoring có hoạt động ngay lập tức không"""
@@ -56,4 +56,3 @@ def test_stop_monitoring():
 
 if __name__ == "__main__":
     test_stop_monitoring()
-

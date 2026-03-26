@@ -3,8 +3,8 @@
 Test logic giới hạn video khi lần đầu theo dõi kênh
 """
 
-from database import DownloadHistory
-from downloader_core import VideoDownloader, ChannelMonitor
+from core.database import DownloadHistory
+from core.downloader_core import VideoDownloader
 
 print("=" * 70)
 print("🧪 TEST LOGIC GIỚI HẠN VIDEO LẦN ĐẦU THEO DÕI KÊNH")

@@ -10,10 +10,10 @@ import threading
 import time
 import random
 import string
-
-from video_processing import sanitize_filename
-
-
+from core.video_processing import sanitize_filename
+from core.video_processing import process, extract_audio_from_video, VideoProcessor
+from core.drive_uploader import upload_file_to_drive
+from core.video_splitter import split_if_longer_than
 class VideoDownloader:
     """Class xử lý tải video từ các nền tảng"""
 
@@ -298,7 +298,6 @@ class VideoDownloader:
                 if self.organize_by_channel:
                     # Luôn lấy tên tài khoản từ link download ban đầu (url), không lấy từ channel_url (có thể là sec_uid)
                     channel_name = self.extract_channel_name(url, platform)
-                    from video_processing import sanitize_filename
                     channel_name = sanitize_filename(channel_name)
                     output_dir = os.path.join(self.download_path, platform, channel_name)
                 else:
@@ -605,8 +604,7 @@ class VideoDownloader:
                             debug_files.append(os.path.join(root, f))
                 print(f"[DEBUG] Không tìm thấy file gốc. Các file mp4 hiện có: {debug_files}")
                 return {'success': False, 'error': 'Không tìm thấy file gốc sau khi tải', 'url': url}
-        # Bước 2: Chỉnh sửa video (mirror, speed, color, ...)
-        from video_processing import process, extract_audio_from_video, VideoProcessor
+            # Bước 2: Chỉnh sửa video (mirror, speed, color, ...)
         file_da_chinh_sua = process(file_goc)
         if not file_da_chinh_sua or not os.path.exists(file_da_chinh_sua):
             return {'success': False, 'error': 'Không tạo được file đã chỉnh sửa', 'url': url}
@@ -621,7 +619,6 @@ class VideoDownloader:
         # Bước 4: Nếu cần cắt, cắt video đã chỉnh sửa thành nhiều phần
         file_cac_phan = [file_da_chinh_sua]
         if split:
-            from video_splitter import split_if_longer_than
             threshold_seconds = 60  # Ví dụ: cắt nếu dài hơn 60s
             segment_seconds = 60    # Ví dụ: mỗi phần 60s
             file_cac_phan = split_if_longer_than(
@@ -641,7 +638,6 @@ class VideoDownloader:
                     file_audio.append(audio)
 
         # Bước 6: Upload file đã chỉnh sửa/cắt, file âm thanh, file mute sạch
-        from drive_uploader import upload_file_to_drive
         uploaded_files = []
         # Lấy tên tài khoản cho upload (chỉ cho phép 'unknown' nếu thực sự không xác định được)
         # Lấy platform nếu truyền vào (ưu tiên đối số), nếu không thì detect lại

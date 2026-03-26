@@ -45,7 +45,7 @@ PARALLEL_DOWNLOADS = 2  # Tải 2 video cùng lúc → Nhanh gấp đôi!
 # Lưu ý: Không nên > 4 để tránh quá tải mạng và bị block
 
 # Tên file lưu lịch sử
-HISTORY_FILE = "download_history.db"
+HISTORY_FILE = "../download_history.db"
 
 # Định dạng video mặc định - Chất lượng cao nhất THỰC SỰ!
 # Format string cho yt-dlp:

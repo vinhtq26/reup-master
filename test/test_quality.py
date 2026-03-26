@@ -2,8 +2,7 @@
 Script test tải video chất lượng cao
 """
 
-from downloader_core import VideoDownloader
-import os
+from core.downloader_core import VideoDownloader
 
 # URL video test - Video ngắn để test nhanh
 test_url = "https://www.youtube.com/watch?v=Ztrj8UIDMQY"

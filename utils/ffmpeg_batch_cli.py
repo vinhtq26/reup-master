@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import video_processing as vp
+from core import video_processing as vp
 
 
 def iter_video_files(input_dir: Path):
