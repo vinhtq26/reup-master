@@ -8,6 +8,10 @@ import re
 from typing import Optional, List, Dict, Callable
 import threading
 import time
+import random
+import string
+
+from video_processing import sanitize_filename
 
 
 class VideoDownloader:
@@ -106,18 +110,26 @@ class VideoDownloader:
             platform = self.detect_platform(url)
 
             # Quyết định thư mục output
-            # - Nếu organize_by_channel = False => luôn lưu thẳng vào thư mục gốc do user chỉ định
-            # - Nếu organize_by_channel = True  => lưu theo Platform/ChannelName
-            if self.organize_by_channel:
-                if channel_url:
-                    channel_name = self.extract_channel_name(channel_url, platform)
-                    output_dir = os.path.join(self.download_path, platform, channel_name)
-                else:
-                    output_dir = os.path.join(self.download_path, platform)
+            # Luôn tạo folder theo tên tài khoản (nếu lấy được), nếu không thì random 4 ký tự
+            channel_name = None
+            if channel_url:
+                channel_name = self.extract_channel_name(channel_url, platform)
             else:
-                output_dir = self.download_path
+                # Thử lấy từ url video nếu không có channel_url
+                channel_name = self.extract_channel_name(url, platform)
 
-            # Tạo thư mục nếu chưa tồn tại
+            # Kiểm tra channel_name hợp lệ (không None, không rỗng, không chứa ký tự cấm)
+            def is_valid_channel_name(name):
+                if not name or not isinstance(name, str):
+                    return False
+                # Không chứa ký tự cấm cho tên folder
+                return re.match(r'^[\w\-\s\.]+$', name) is not None
+
+            if not is_valid_channel_name(channel_name):
+                # Sinh folder ngẫu nhiên 4 ký tự nếu không hợp lệ
+                channel_name = ''.join(random.choices(string.ascii_letters + string.digits, k=4))
+
+            output_dir = os.path.join(self.download_path, platform, channel_name)
             os.makedirs(output_dir, exist_ok=True)
 
             # Xác định format string dựa trên quality
@@ -148,13 +160,17 @@ class VideoDownloader:
             # nhưng nội bộ thường normalize thành dict; ta luôn dùng dict để tránh lỗi TypeError)
             ydl_opts = {
                 'format': format_string,
-                'outtmpl': {
-                    'default': os.path.join(output_dir, '%(title)s.%(ext)s'),
-                },
                 'quiet': False,
                 'no_warnings': False,
                 'ignoreerrors': True,
                 'merge_output_format': 'mp4',
+
+                # # YouTube: cần JS runtime để extract đủ format (yt-dlp cảnh báo nếu thiếu)
+                # # Máy bạn có Node.js => dùng node để tránh thiếu format/không tải được với một số video dài/playlist
+                # 'js_runtimes': ['node'],
+                #
+                # # Nếu user dán link có &list=... thì mặc định chỉ tải video hiện tại (tránh tải cả playlist "Mix")
+                # 'noplaylist': True,
 
                 # QUAN TRỌNG: Sử dụng FFmpeg với tham số tối ưu
                 # yt-dlp mong đợi kiểu dict[str, list[str]]
@@ -177,6 +193,19 @@ class VideoDownloader:
                 # Debug: Giữ file gốc để so sánh (uncomment nếu cần)
                 # 'keepvideo': True,
             }
+
+            # Xác định tên file an toàn, ngắn gọn cho outtmpl (nếu quá dài thì chỉ lấy video_id)
+            try:
+                info_dict = yt_dlp.YoutubeDL({'quiet': True}).extract_info(url, download=False)
+                video_id = info_dict.get('id', 'video')
+                title = info_dict.get('title', 'Unknown')
+                safe_title = self.sanitize_filename(title, 40)
+                outtmpl_filename = f"{video_id}_{safe_title}.%(ext)s"
+                if len(outtmpl_filename) > 80:
+                    outtmpl_filename = f"{video_id}.%(ext)s"
+            except Exception:
+                outtmpl_filename = 'video.%(ext)s'
+            ydl_opts['outtmpl'] = {'default': os.path.join(output_dir, outtmpl_filename)}
 
             # Thêm progress hook để kiểm tra monitor
             progress_hooks = []
@@ -267,11 +296,11 @@ class VideoDownloader:
                 # Sau khi có (hoặc không có) channel_url, quyết định thư mục output
                 platform = self.detect_platform(url)
                 if self.organize_by_channel:
-                    if channel_url:
-                        channel_name = self.extract_channel_name(channel_url, platform)
-                        output_dir = os.path.join(self.download_path, platform, channel_name)
-                    else:
-                        output_dir = os.path.join(self.download_path, platform)
+                    # Luôn lấy tên tài khoản từ link download ban đầu (url), không lấy từ channel_url (có thể là sec_uid)
+                    channel_name = self.extract_channel_name(url, platform)
+                    from video_processing import sanitize_filename
+                    channel_name = sanitize_filename(channel_name)
+                    output_dir = os.path.join(self.download_path, platform, channel_name)
                 else:
                     output_dir = self.download_path
 
@@ -310,11 +339,58 @@ class VideoDownloader:
                     else:
                         raise
 
+                # Luôn dùng tên file đã sanitize, ngắn, tiếng Anh cho outtmpl
+                if isinstance(info, dict):
+                    video_id = info.get('id', 'video')
+                    title = info.get('title', 'Unknown')
+                    safe_title = sanitize_filename(title, 20)
+                    if not safe_title:
+                        safe_title = 'video'
+                    ext = info.get('ext', 'mp4')
+                    outtmpl_filename = f"{video_id}_{safe_title}.%(ext)s"
+                    ydl.params['outtmpl']['default'] = os.path.join(output_dir, outtmpl_filename)
+                else:
+                    video_id = ''
+                    title = 'Unknown'
+                    outtmpl_filename = 'video.%(ext)s'
+                    ydl.params['outtmpl']['default'] = os.path.join(output_dir, outtmpl_filename)
+
+                # KIỂM TRA TRƯỚC KHI TẢI THẬT SỰ
+                if monitor and hasattr(monitor, 'is_running') and not monitor.is_running:
+                    return {
+                        'success': False,
+                        'error': 'Download cancelled',
+                        'url': url
+                    }
+
+                # Tải video
+                try:
+                    ydl.download([url])
+                except TypeError as te:
+                    # Một số trường hợp lỗi đến từ progress_hooks/callback bên ngoài hoặc payload không đúng kiểu.
+                    # Thử lại 1 lần không có progress_hooks để tránh crash toàn bộ.
+                    msg = str(te)
+                    if "string indices must be integers" in msg:
+                        try:
+                            # clone, bỏ hooks
+                            ydl2_opts = dict(ydl_opts)
+                            ydl2_opts.pop('progress_hooks', None)
+                            with yt_dlp.YoutubeDL(ydl2_opts) as ydl2:
+                                ydl2.download([url])
+                        except Exception as te2:
+                            raise te2
+                    else:
+                        raise
+
                 # Chỉ dùng .get nếu info là dict, tránh lỗi "string indices must be integers"
                 if isinstance(info, dict):
                     video_id = info.get('id', '')
                     title = info.get('title', 'Unknown')
-                    file_path = ydl.prepare_filename(info)
+                    safe_title = sanitize_filename(title, 40)
+                    if not safe_title:
+                        safe_title = 'video'
+                    ext = info.get('ext', 'mp4')
+                    file_path = os.path.join(output_dir, f"{video_id}_{safe_title}.{ext}")
                 else:
                     video_id = ''
                     title = 'Unknown'
@@ -412,73 +488,199 @@ class VideoDownloader:
         else:
             return "Unknown"
 
-    def extract_channel_name(self, channel_url: str, platform: str) -> str:
+    def extract_channel_name(self, url: str, platform: str) -> str:
+        """Trích xuất tên tài khoản/kênh từ URL, nếu không có thì random 4 ký tự"""
+        try:
+            # TikTok, Douyin: /@username/ hoặc /@username/video... (lấy toàn bộ sau @, chỉ giữ chữ và số và dấu chấm)
+            match = re.search(r"/@([\w\.]+)", url)
+            if match:
+                username = match.group(1)
+                username_clean = re.sub(r"[^a-zA-Z0-9.]", "", username)
+                print(f"[LOG] extract_channel_name: TikTok username raw='{username}', clean='{username_clean}' from url={url}")
+                if hasattr(self, 'status_callback') and callable(getattr(self, 'status_callback', None)):
+                    self.status_callback(f"[LOG] extract_channel_name: TikTok username raw='{username}', clean='{username_clean}' from url={url}")
+                if username_clean:
+                    return username_clean
+            # YouTube: /channel/UCxxxx, /c/Name, /user/Name
+            match = re.search(r"/(channel|c|user)/([\w\-\.]+)", url)
+            if match:
+                username = match.group(2)
+                username_clean = re.sub(r"[^a-zA-Z0-9]", "", username)
+                print(f"[LOG] extract_channel_name: YouTube username raw='{username}', clean='{username_clean}' from url={url}")
+                if hasattr(self, 'status_callback') and callable(getattr(self, 'status_callback', None)):
+                    self.status_callback(f"[LOG] extract_channel_name: YouTube username raw='{username}', clean='{username_clean}' from url={url}")
+                if username_clean:
+                    return username_clean
+            # Facebook: /username/ hoặc /videos/
+            match = re.search(r"facebook.com/([\w\.]+)/", url)
+            if match:
+                username = match.group(1)
+                username_clean = re.sub(r"[^a-zA-Z0-9]", "", username)
+                print(f"[LOG] extract_channel_name: Facebook username raw='{username}', clean='{username_clean}' from url={url}")
+                if hasattr(self, 'status_callback') and callable(getattr(self, 'status_callback', None)):
+                    self.status_callback(f"[LOG] extract_channel_name: Facebook username raw='{username}', clean='{username_clean}' from url={url}")
+                if username_clean:
+                    return username_clean
+        except Exception as e:
+            print(f"[LOG] Exception in extract_channel_name: {e} (url={url})")
+            if hasattr(self, 'status_callback') and callable(getattr(self, 'status_callback', None)):
+                self.status_callback(f"[LOG] Exception in extract_channel_name: {e} (url={url})")
+        # Nếu không lấy được thì trả về 'unknown'
+        print(f"[LOG] extract_channel_name: unknown for url={url}")
+        if hasattr(self, 'status_callback') and callable(getattr(self, 'status_callback', None)):
+            self.status_callback(f"[LOG] extract_channel_name: unknown for url={url}")
+        return "unknown"
+
+    def get_channel_name(self, url: str) -> str:
         """
-        Trích xuất tên kênh từ URL để tạo tên folder
+        Lấy tên tài khoản từ url. Nếu không xác định được thì trả về 'unknown'.
+        Chỉ được phép trả về 'unknown' nếu thực sự không lấy được tên tài khoản.
+        """
+        try:
+            # TikTok, Douyin: /@username/ hoặc /@username/video... (lấy toàn bộ sau @, chỉ giữ chữ và số và dấu chấm)
+            match = re.search(r"/@([\w\.]+)", url)
+            if match:
+                username = match.group(1)
+                # Loại bỏ mọi ký tự không phải chữ, số hoặc dấu chấm
+                username = re.sub(r"[^a-zA-Z0-9.]", "", username)
+                if username:
+                    print(f"[DEBUG] TikTok username detected: {username}")
+                    return username
+            # YouTube: /channel/UCxxxx, /c/Name, /user/Name
+            match = re.search(r"/(channel|c|user)/([\w\-\.]+)", url)
+            if match:
+                username = match.group(2)
+                username = re.sub(r"[^a-zA-Z0-9]", "", username)
+                if username:
+                    print(f"[DEBUG] YouTube username detected: {username}")
+                    return username
+            # Facebook: /username/ hoặc /videos/
+            match = re.search(r"facebook.com/([\w\.]+)/", url)
+            if match:
+                username = match.group(1)
+                username = re.sub(r"[^a-zA-Z0-9]", "", username)
+                if username:
+                    print(f"[DEBUG] Facebook username detected: {username}")
+                    return username
+        except Exception as e:
+            print(f"[DEBUG] Exception in get_channel_name: {e}")
+        # Nếu không lấy được thì trả về 'unknown'
+        print("[DEBUG] Channel name unknown for url:", url)
+        return "unknown"
+
+    def process_and_upload(self, url: str, split: bool = False, extract_audio: bool = False, progress_callback: Callable = None, quality: str = "best", monitor=None, channel_url: str = None) -> Dict:
+        """
+        Luồng chuẩn: Tải video -> Chỉnh sửa -> (Cắt nếu cần) -> (Tách âm nếu chọn) -> Upload file đã chỉnh sửa/cắt và file âm thanh tách ra từ các file này.
+        TUYỆT ĐỐI không upload file gốc hoặc tách âm từ file gốc.
+        """
+        # Bước 1: Tải video gốc
+        download_result = self.download_video(url, progress_callback=progress_callback, quality=quality, monitor=monitor, channel_url=channel_url)
+        if not download_result.get('success'):
+            return download_result
+        file_goc = download_result.get('file_path')
+        # Nếu file_goc là đường dẫn tương đối, chuyển sang tuyệt đối
+        if file_goc and not os.path.isabs(file_goc):
+            file_goc = os.path.abspath(file_goc)
+        # Nếu vẫn không tồn tại, thử tìm file mp4 mới nhất trong thư mục output
+        if not file_goc or not os.path.exists(file_goc):
+            search_dir = self.download_path
+            found_file = None
+            latest_time = 0
+            for root, dirs, files in os.walk(search_dir):
+                for f in files:
+                    if f.lower().endswith('.mp4') and not f.endswith('.part'):
+                        full_path = os.path.join(root, f)
+                        mtime = os.path.getmtime(full_path)
+                        if mtime > latest_time:
+                            latest_time = mtime
+                            found_file = full_path
+            if found_file and os.path.exists(found_file):
+                file_goc = found_file
+            else:
+                # Ghi log các file mp4 thực tế để debug
+                debug_files = []
+                for root, dirs, files in os.walk(search_dir):
+                    for f in files:
+                        if f.lower().endswith('.mp4'):
+                            debug_files.append(os.path.join(root, f))
+                print(f"[DEBUG] Không tìm thấy file gốc. Các file mp4 hiện có: {debug_files}")
+                return {'success': False, 'error': 'Không tìm thấy file gốc sau khi tải', 'url': url}
+        # Bước 2: Chỉnh sửa video (mirror, speed, color, ...)
+        from video_processing import process, extract_audio_from_video, VideoProcessor
+        file_da_chinh_sua = process(file_goc)
+        if not file_da_chinh_sua or not os.path.exists(file_da_chinh_sua):
+            return {'success': False, 'error': 'Không tạo được file đã chỉnh sửa', 'url': url}
+
+        # Bước 3: Tạo video sạch không âm thanh, không metadata
+        processor = VideoProcessor()
+        file_mute_clean = os.path.splitext(file_da_chinh_sua)[0] + '_mute_clean.mp4'
+        mute_result = processor.make_video_mute_and_clean(file_da_chinh_sua, file_mute_clean, overwrite=True)
+        if mute_result.returncode != 0 or not os.path.exists(file_mute_clean):
+            file_mute_clean = None
+
+        # Bước 4: Nếu cần cắt, cắt video đã chỉnh sửa thành nhiều phần
+        file_cac_phan = [file_da_chinh_sua]
+        if split:
+            from video_splitter import split_if_longer_than
+            threshold_seconds = 60  # Ví dụ: cắt nếu dài hơn 60s
+            segment_seconds = 60    # Ví dụ: mỗi phần 60s
+            file_cac_phan = split_if_longer_than(
+                file_da_chinh_sua,
+                threshold_seconds=threshold_seconds,
+                segment_seconds=segment_seconds
+            )
+            if not file_cac_phan:
+                return {'success': False, 'error': 'Không cắt được video', 'url': url}
+
+        # Bước 5: Nếu chọn tách âm, chỉ tách âm từ file đã chỉnh sửa/cắt
+        file_audio = []
+        if extract_audio:
+            for f in file_cac_phan:
+                audio = extract_audio_from_video(f)
+                if audio:
+                    file_audio.append(audio)
+
+        # Bước 6: Upload file đã chỉnh sửa/cắt, file âm thanh, file mute sạch
+        from drive_uploader import upload_file_to_drive
+        uploaded_files = []
+        # Lấy tên tài khoản cho upload (chỉ cho phép 'unknown' nếu thực sự không xác định được)
+        channel_name_upload = self.get_channel_name(url)
+        if not channel_name_upload or channel_name_upload.strip() == "":
+            channel_name_upload = "unknown"
+        for f in file_cac_phan:
+            file_id = upload_file_to_drive(f, [channel_name_upload])
+            uploaded_files.append({'file': f, 'drive_id': file_id})
+        uploaded_audios = []
+        for a in file_audio:
+            file_id = upload_file_to_drive(a, [channel_name_upload])
+            uploaded_audios.append({'file': a, 'drive_id': file_id})
+        uploaded_mute_clean = None
+        if file_mute_clean and os.path.exists(file_mute_clean):
+            file_id = upload_file_to_drive(file_mute_clean, [channel_name_upload])
+            uploaded_mute_clean = {'file': file_mute_clean, 'drive_id': file_id}
+
+        return {
+            'success': True,
+            'video_files': uploaded_files,
+            'audio_files': uploaded_audios,
+            'mute_clean_file': uploaded_mute_clean,
+            'url': url
+        }
+
+    def sanitize_filename(name: str, max_length: int = 60) -> str:
+        """
+        Hàm chuẩn hóa tên file: loại bỏ ký tự đặc biệt, thay thế khoảng trắng bằng dấu gạch dưới, và giới hạn độ dài.
 
         Args:
-            channel_url: URL kênh
-            platform: Nền tảng
+            name: Tên file gốc
+            max_length: Độ dài tối đa của tên file sau khi chuẩn hóa
 
         Returns:
-            Tên kênh (safe cho folder name)
+            Tên file đã được chuẩn hóa
         """
-        import re
-
-        try:
-            # YouTube
-            if platform == "YouTube":
-                # Patterns: @channelname, /c/ChannelName, /channel/UCxxx, /user/username
-                patterns = [
-                    r'@([a-zA-Z0-9_-]+)',           # @channelname
-                    r'/c/([a-zA-Z0-9_-]+)',         # /c/ChannelName
-                    r'/channel/([a-zA-Z0-9_-]+)',   # /channel/UCxxx
-                    r'/user/([a-zA-Z0-9_-]+)',      # /user/username
-                ]
-                for pattern in patterns:
-                    match = re.search(pattern, channel_url)
-                    if match:
-                        return match.group(1)
-                return "unknown_channel"
-
-            # TikTok
-            elif platform == "TikTok":
-                # Pattern: @username
-                match = re.search(r'@([a-zA-Z0-9_.]+)', channel_url)
-                if match:
-                    return match.group(1)
-                return "unknown_user"
-
-            # Douyin
-            elif platform == "Douyin":
-                # Pattern: /user/MS4xxx hoặc tương tự
-                match = re.search(r'/user/([a-zA-Z0-9_-]+)', channel_url)
-                if match:
-                    return match.group(1)
-                return "unknown_user"
-
-            # Facebook
-            elif platform == "Facebook":
-                # Pattern: /pagename hoặc /pages/xxx
-                patterns = [
-                    r'facebook\.com/([a-zA-Z0-9_.]+)',
-                    r'/pages/([a-zA-Z0-9_-]+)',
-                ]
-                for pattern in patterns:
-                    match = re.search(pattern, channel_url)
-                    if match:
-                        name = match.group(1)
-                        # Loại bỏ các path không phải tên page
-                        if name not in ['pages', 'videos', 'posts', 'watch']:
-                            return name
-                return "unknown_page"
-
-            else:
-                return "unknown"
-
-        except Exception as e:
-            print(f"Lỗi khi trích xuất tên kênh: {e}")
-            return "unknown"
+        name = re.sub(r'[^\w\-_. ]', '', name)
+        name = name.replace(' ', '_')
+        return name[:max_length]
 
 
 class ChannelMonitor:

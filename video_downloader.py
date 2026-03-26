@@ -50,6 +50,8 @@ class VideoDownloaderApp(ctk.CTk):
         self.edit_after_download = bool(getattr(settings, "edit_after_download", False))
         # Flag: có upload lên Google Drive sau khi tải không?
         self.upload_to_drive = bool(getattr(settings, "upload_to_drive", False))
+        # NEW: Flag: có tách video sau khi tải không?
+        self.split_after_download = bool(getattr(settings, "split_after_download", False))
 
         # Khởi tạo downloader với đúng download_path
         self.downloader = VideoDownloader(download_path=self.download_path)
@@ -194,6 +196,16 @@ class VideoDownloaderApp(ctk.CTk):
         )
         upload_drive_cb.grid(row=2, column=0, columnspan=3, padx=10, pady=(0, 10), sticky="w")
 
+        # NEW: Checkbox: tách video nếu dài (chỉ chạy khi user bật)
+        self.split_var = ctk.BooleanVar(value=self.split_after_download)
+        split_cb = ctk.CTkCheckBox(
+            settings_frame,
+            text=f"✂️ Tách video nếu dài hơn {int(SPLIT_IF_LONGER_THAN_SECONDS)}s (mỗi part ~{int(SPLIT_SEGMENT_SECONDS)}s)",
+            variable=self.split_var,
+            command=self.on_toggle_split_after_download,
+        )
+        split_cb.grid(row=3, column=0, columnspan=3, padx=10, pady=(0, 10), sticky="w")
+
         # ========== TAB VIEW ==========
         self.tabview = ctk.CTkTabview(self)
         self.tabview.pack(fill="both", expand=True, padx=20, pady=10)
@@ -233,11 +245,13 @@ class VideoDownloaderApp(ctk.CTk):
         current = load_settings()
         # Lưu thêm upload_to_drive nếu có
         self.upload_to_drive = bool(getattr(current, "upload_to_drive", False))
+        self.split_after_download = bool(getattr(current, "split_after_download", False))
         save_settings(
             UserSettings(
                 download_root=current.download_root,
                 edit_after_download=self.edit_after_download,
                 upload_to_drive=self.upload_to_drive,
+                split_after_download=self.split_after_download,
             )
         )
         self.log_message(f"✂️ Edit sau khi tải: {'BẬT' if self.edit_after_download else 'TẮT'}")
@@ -251,135 +265,113 @@ class VideoDownloaderApp(ctk.CTk):
                 download_root=current.download_root,
                 edit_after_download=bool(getattr(current, "edit_after_download", False)),
                 upload_to_drive=self.upload_to_drive,
+                split_after_download=bool(getattr(current, "split_after_download", False)),
             )
         )
         self.log_message(f"☁️ Upload Google Drive sau khi tải: {'BẬT' if self.upload_to_drive else 'TẮT'}")
 
-    def _maybe_post_process_downloaded_file(self, file_path: str) -> str:
-        """Nếu user bật 'edit', chạy xử lý FFmpeg và trả về path output.
+    def on_toggle_split_after_download(self):
+        """Lưu setting khi user bật/tắt tách video."""
+        self.split_after_download = bool(self.split_var.get())
+        current = load_settings()
+        save_settings(
+            UserSettings(
+                download_root=current.download_root,
+                edit_after_download=bool(getattr(current, "edit_after_download", False)),
+                upload_to_drive=bool(getattr(current, "upload_to_drive", False)),
+                split_after_download=self.split_after_download,
+            )
+        )
+        self.log_message(f"✂️ Tách video sau khi tải: {'BẬT' if self.split_after_download else 'TẮT'}")
 
-        - Output nằm cùng thư mục với file gốc.
-        - Không ghi đè file gốc.
-        - Nếu không edit hoặc file_path không hợp lệ, trả về file_path.
+    def _postprocess_master(self, file_path: str) -> str:
+        """Apply the basic edit (if enabled) and return the master output path.
+
+        This is the file considered 'gốc' per requirement (after basic edits).
+        No splitting is performed here.
+        """
+        if not file_path:
+            return file_path
+        src = os.path.abspath(file_path)
+        if not os.path.exists(src):
+            return file_path
+
+        # If edit is disabled, master is the downloaded file.
+        if not self.edit_after_download:
+            return src
+
+        base, ext = os.path.splitext(src)
+        out = base + "_edited" + (ext or ".mp4")
+
+        self.log_message("✂️ Đang edit video bằng FFmpeg...")
+        self.update_status("✂️ Đang edit video...")
+
+        self.video_processor.process_one(
+            src,
+            out,
+            settings=self.video_edit_settings,
+            overwrite=True,
+        )
+        self.log_message(f"✓ Edit xong: {os.path.basename(out)}")
+        return out
+
+    def _maybe_post_process_downloaded_file(self, file_path: str) -> str:
+        """Legacy wrapper: basic edit (if enabled) then optional split.
+
+        Returns path used for DB compatibility (first part if split happens).
         """
         try:
-            if not self.edit_after_download:
-                # Không edit thì vẫn có thể split nếu video dài
-                return self._maybe_split_long_video(file_path)
-            if not file_path:
-                return file_path
-
-            src = os.path.abspath(file_path)
-            if not os.path.exists(src):
-                return file_path
-
-            base, ext = os.path.splitext(src)
-            out = base + "_edited" + (ext or ".mp4")
-
-            self.log_message("✂️ Đang edit video bằng FFmpeg...")
-            self.update_status("✂️ Đang edit video...")
-
-            self.video_processor.process_one(
-                src,
-                out,
-                settings=self.video_edit_settings,
-                overwrite=True,
-            )
-
-            self.log_message(f"✓ Edit xong: {os.path.basename(out)}")
-            return self._maybe_split_long_video(out)
+            master = self._postprocess_master(file_path)
+            return self._maybe_split_long_video(master)
         except Exception as e:
-            # Không fail toàn bộ download nếu edit lỗi
             self.log_message(f"⚠️ Edit thất bại, giữ file gốc. Lỗi: {e}")
             return self._maybe_split_long_video(file_path)
 
     def _channel_monitor_postprocess(self, file_path: str, video_info: dict) -> str:
         """Callback cho ChannelMonitor: edit + (nếu bật) upload Drive.
 
-        ChannelMonitor truyền vào:
-        - file_path: đường dẫn file vừa tải
-        - video_info: dict có keys: url, platform, channel_url, title, video_id (tôi sẽ đảm bảo dưới core)
+        Nếu user bật split:
+        - Vẫn trả về part đầu tiên để lưu DB (giữ tương thích hiện tại).
+        - Upload lên Drive:
+          - Upload file gốc.
+          - Upload TẤT CẢ part sau khi cắt.
+          - Đồng thời tách asset (muted mp4 + mp3) cho từng part và upload lên Drive.
+            Các asset này sẽ bị xóa local ngay sau khi upload để tiết kiệm dung lượng.
         """
-        # 1) Hậu kỳ (edit + cắt nếu dài)
-        final_path = self._maybe_post_process_downloaded_file(file_path)
+        # 1) master after basic edit (this is the 'Original' file)
+        try:
+            master_path = self._postprocess_master(file_path)
+        except Exception as e:
+            self.log_message(f"⚠️ Edit thất bại, giữ file gốc. Lỗi: {e}")
+            master_path = file_path
 
-        # 2) Upload Drive nếu bật
+        # 2) optional split (DB keeps part[0])
+        final_path = self._maybe_split_long_video(master_path)
+
         if self.upload_to_drive:
             platform = video_info.get("platform") or "Unknown"
             channel_url = video_info.get("channel_url") or None
             try:
-                self._upload_to_google_drive(final_path, platform=platform, channel_url=channel_url)
+                if self.split_after_download:
+                    # Upload 'gốc' = master after basic edit
+                    if master_path and os.path.exists(master_path):
+                        self._upload_to_google_drive(master_path, platform=platform, channel_url=channel_url, category="Original")
+
+                    parts = self._collect_split_parts(final_path)
+                    if not parts and final_path and os.path.exists(final_path):
+                        parts = [final_path]
+
+                    for part in parts:
+                        self._upload_to_google_drive(part, platform=platform, channel_url=channel_url, category="Parts")
+                        self._extract_upload_and_cleanup_assets(part, platform=platform, channel_url=channel_url)
+                else:
+                    # No split: upload the master as Original
+                    if master_path and os.path.exists(master_path):
+                        self._upload_to_google_drive(master_path, platform=platform, channel_url=channel_url, category="Original")
             except Exception as e:
                 self.log_message(f"⚠️ Upload Drive (monitor) lỗi (bỏ qua): {e}")
 
         return final_path
-
-    def _maybe_split_long_video(self, file_path: str) -> str:
-        """Nếu video dài hơn ngưỡng config thì cắt nhỏ.
-
-        NOTE: DB hiện lưu 1 file_path/video. Để không phá DB, hàm này trả về part đầu tiên
-        và log ra các part còn lại để user tìm trong thư mục.
-        """
-        try:
-            if not file_path:
-                return file_path
-
-            threshold = int(SPLIT_IF_LONGER_THAN_SECONDS)
-            segment = int(SPLIT_SEGMENT_SECONDS)
-            if threshold <= 0 or segment <= 0:
-                return file_path
-
-            parts = split_if_longer_than(
-                file_path,
-                threshold_seconds=threshold,
-                segment_seconds=segment,
-            )
-            if len(parts) <= 1:
-                return file_path
-
-            self.log_message(f"✂️ Video dài hơn {threshold}s → đã cắt thành {len(parts)} part (mỗi ~{segment}s)")
-            # log tối đa 6 part đầu để không spam
-            for p in parts[:6]:
-                self.log_message(f"   • {os.path.basename(p)}")
-            if len(parts) > 6:
-                self.log_message(f"   … và {len(parts) - 6} part khác")
-
-            # Trả về part đầu tiên để lưu vào DB
-            return parts[0]
-        except Exception as e:
-            self.log_message(f"⚠️ Cắt video thất bại (bỏ qua): {e}")
-            return file_path
-
-    def _upload_to_google_drive(self, file_path: str, platform: str | None = None, channel_url: str | None = None):
-        """Upload file đã tải lên Google Drive theo folder Platform/Channel."""
-        try:
-            if not self.upload_to_drive:
-                return
-            if not file_path or not os.path.exists(file_path):
-                return
-
-            # Xác định folder tree trên Drive
-            platform_name = platform or "Unknown"
-            channel_name = "Misc"
-            if channel_url and platform:
-                try:
-                    channel_name = self.downloader.extract_channel_name(channel_url, platform_name)
-                except Exception:
-                    channel_name = "Misc"
-
-            folder_parts = [platform_name, channel_name]
-
-            self.log_message(f"☁️ Đang upload lên Google Drive ({'/'.join(folder_parts)})...")
-
-            # Gọi helper upload (sử dụng Google Drive API)
-            file_id = upload_file_to_drive(file_path, folder_parts)
-
-            if file_id:
-                self.log_message(f"☁️ Đã upload lên Google Drive (file id: {file_id})")
-            else:
-                self.log_message("⚠️ Upload Google Drive không thành công (không có file_id)")
-        except Exception as e:
-            self.log_message(f"⚠️ Upload Google Drive thất bại (bỏ qua): {e}")
 
     def download_single_video(self):
         """Tải một video từ URL"""
@@ -398,43 +390,45 @@ class VideoDownloaderApp(ctk.CTk):
             self.log_message(f"📁 ROOT hiện tại: {self.download_path}")
             self.log_message(f"🔄 Bắt đầu tải: {url}")
             self.update_status("⏳ Đang tải video...")
-
-            # chữ ký mới có channel_url optional nên giữ nguyên cũng được,
-            # nhưng truyền rõ ràng để dễ hiểu
             self.log_message(f"URL đang tải: {url}")
-            result = self.downloader.download_video(url, channel_url=None)
 
+            # Sử dụng process_and_upload để đảm bảo đúng luồng xử lý
+            result = self.downloader.process_and_upload(
+                url,
+                split=self.split_after_download,
+                extract_audio=self.edit_after_download,  # hoặc thêm flag riêng nếu muốn tách âm độc lập
+                progress_callback=None,
+                quality="best",
+                monitor=None,
+                channel_url=None
+            )
 
             if result.get('success'):
-                processed_path = self._maybe_post_process_downloaded_file(result.get('file_path', ''))
-
-                # Sau khi xử lý xong => nếu user bật upload thì upload lên Drive theo Platform/Channel
-                if self.upload_to_drive:
-                    self._upload_to_google_drive(
-                        processed_path,
-                        platform=result.get('platform', 'Unknown'),
-                        channel_url=None,  # tải 1 video lẻ không gắn kênh → đưa vào Platform/Misc
-                    )
+                # Lấy file video và audio đã upload (nếu có)
+                uploaded_videos = result.get('video_files', [])
+                uploaded_audios = result.get('audio_files', [])
+                video_paths = [f['file'] for f in uploaded_videos]
+                audio_paths = [f['file'] for f in uploaded_audios]
+                processed_path = video_paths[0] if video_paths else None
 
                 # Lưu vào database
                 video_id = self.downloader.extract_video_id(
                     url,
-                    result.get('platform', 'Unknown')
+                    result.get('video_files', [{}])[0].get('file', 'Unknown') if result.get('video_files') else 'Unknown'
                 )
 
                 self.database.add_downloaded_video(
                     video_id=video_id,
                     video_url=url,
-                    platform=result.get('platform', 'Unknown'),
-                    title=result.get('title', ''),
+                    platform=result.get('url', 'Unknown'),
+                    title=result.get('url', ''),
                     file_path=processed_path
                 )
 
-                self.log_message(f"✅ Tải thành công: {result.get('title', 'Unknown')}")
+                self.log_message(f"✅ Tải thành công: {url}")
                 self.update_status("✓ Tải thành công!")
                 self.progress_bar.set(1.0)
-
-                messagebox.showinfo("Thành công", f"Đã tải xong: {result.get('title', 'Unknown')}")
+                messagebox.showinfo("Thành công", f"Đã tải xong: {url}")
             else:
                 error_msg = result.get('error', 'Lỗi không xác định')
                 self.log_message(f"❌ Lỗi: {error_msg}")
@@ -517,6 +511,7 @@ class VideoDownloaderApp(ctk.CTk):
                     download_root=folder,
                     edit_after_download=bool(getattr(current, 'edit_after_download', False)),
                     upload_to_drive=bool(getattr(current, 'upload_to_drive', False)),
+                    split_after_download=bool(getattr(current, 'split_after_download', False)),
                 )
             )
 
@@ -1238,6 +1233,126 @@ class VideoDownloaderApp(ctk.CTk):
 
         self.database.close()
         self.destroy()
+
+    def _collect_split_parts(self, any_part_path: str) -> list[str]:
+        """Collect all split part files for a split output.
+
+        - Input is usually the first part returned by _maybe_split_long_video().
+        - Returns absolute file paths sorted by filename.
+        """
+        try:
+            if not any_part_path:
+                return []
+            ap = os.path.abspath(any_part_path)
+            if not os.path.exists(ap):
+                return []
+
+            # Heuristic: parts are in same folder and share the same stem prefix.
+            # Example: video_edited_part001.mp4 / video_edited_part002.mp4 ...
+            folder = os.path.dirname(ap)
+            fname = os.path.basename(ap)
+
+            # Common patterns: "part" within filename.
+            # Use prefix up to "part" (inclusive) as grouping key.
+            lower = fname.lower()
+            idx = lower.rfind("part")
+            if idx <= 0:
+                return []
+
+            prefix = fname[: idx + 4]  # include "part"
+            matches = []
+            for f in os.listdir(folder):
+                if f.startswith(prefix):
+                    full = os.path.join(folder, f)
+                    if os.path.isfile(full):
+                        matches.append(full)
+
+            matches.sort()
+            return matches
+        except Exception:
+            return []
+
+    def _extract_upload_and_cleanup_assets(self, video_path: str, *, platform: str | None, channel_url: str | None) -> None:
+        """Extract (muted mp4 + mp3) for a video, upload them to Drive, then delete local assets.
+
+        Local disk policy (per request): keep only original/part videos locally; do not keep extracted assets.
+        """
+        # Only meaningful when Drive upload is enabled (assets are short-lived).
+        if not self.upload_to_drive:
+            return
+        # Assets are only requested in the "split" flow.
+        if not self.split_after_download:
+            return
+
+        try:
+            if not video_path or not os.path.exists(video_path):
+                return
+
+            out_dir = os.path.dirname(os.path.abspath(video_path))
+            muted_path = None
+            audio_path = None
+
+            try:
+                muted_p, audio_p = self.video_processor.extract_assets(video_path, out_dir)
+                muted_path = str(muted_p)
+                audio_path = str(audio_p)
+            except Exception as e:
+                self.log_message(f"⚠️ Tách audio/muted thất bại (bỏ qua): {e}")
+                return
+
+            # Upload both assets
+            if muted_path and os.path.exists(muted_path):
+                self._upload_to_google_drive(muted_path, platform=platform, channel_url=channel_url, category="Assets")
+            if audio_path and os.path.exists(audio_path):
+                self._upload_to_google_drive(audio_path, platform=platform, channel_url=channel_url, category="Assets")
+
+        finally:
+            # Always cleanup local assets
+            for p in (muted_path, audio_path):
+                if p and os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+
+    def _maybe_split_long_video(self, file_path: str) -> str:
+        """Split the video into parts if the user enabled splitting and the video is longer than the configured threshold.
+
+        Returns:
+            - If split is disabled or not needed: the original file_path
+            - If split happens: the first part path (DB compatibility)
+
+        Note: all parts are still created on disk by the splitter.
+        """
+        try:
+            if not getattr(self, "split_after_download", False):
+                return file_path
+            if not file_path:
+                return file_path
+
+            threshold = int(SPLIT_IF_LONGER_THAN_SECONDS)
+            segment = int(SPLIT_SEGMENT_SECONDS)
+            if threshold <= 0 or segment <= 0:
+                return file_path
+
+            parts = split_if_longer_than(
+                file_path,
+                threshold_seconds=threshold,
+                segment_seconds=segment,
+            )
+            if len(parts) <= 1:
+                return file_path
+
+            self.log_message(f"✂️ Video dài hơn {threshold}s → đã cắt thành {len(parts)} part (mỗi ~{segment}s)")
+            for p in parts[:6]:
+                self.log_message(f"   • {os.path.basename(p)}")
+            if len(parts) > 6:
+                self.log_message(f"   … và {len(parts) - 6} part khác")
+
+            return parts[0]
+        except Exception as e:
+            self.log_message(f"⚠️ Cắt video thất bại (bỏ qua): {e}")
+            return file_path
 
 
 # def main():

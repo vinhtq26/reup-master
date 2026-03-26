@@ -67,6 +67,7 @@ def find_or_create_folder(service, name: str, parent_id: Optional[str] = None) -
     query_parts = [
         "mimeType='application/vnd.google-apps.folder'",
         f"name='{safe_name}'",
+        "trashed = false",  # Chỉ lấy folder chưa bị xoá
     ]
     if parent_id:
         query_parts.append(f"'{parent_id}' in parents")
@@ -112,27 +113,45 @@ def ensure_folder_tree(service, path_parts, root_folder_name: str = "VideoDownlo
     return current_parent
 
 
-def upload_file_to_drive(local_path: str, folder_parts: list[str]) -> Optional[str]:
+def upload_file_to_drive(local_path: str, folder_parts: list[str], subfolder: Optional[str] = None, status_callback=None) -> Optional[str]:
     """Upload file local_path lên Drive, theo cây thư mục folder_parts.
 
     - folder_parts: ví dụ ["YouTube", "KenhA"]
+    - subfolder: ví dụ "Original" / "Parts" / "Assets" (optional)
     - Tự động tạo root "VideoDownloaderRoot" nếu chưa có.
 
     Trả về: file_id trên Drive (hoặc None nếu lỗi).
     """
+    def log(msg):
+        print(msg)
+        if status_callback and callable(status_callback):
+            status_callback(msg)
+
     if not os.path.exists(local_path):
+        log(f"[ERROR] File not found: {local_path}")
         raise FileNotFoundError(local_path)
 
-    service = get_drive_service()
+    log(f"[UPLOAD] Bắt đầu upload file: {local_path} lên Google Drive...")
+    try:
+        service = get_drive_service()
+        log("[UPLOAD] Đã lấy service Google Drive.")
 
-    parent_id = ensure_folder_tree(service, folder_parts)
+        parent_id = ensure_folder_tree(service, folder_parts)
+        log(f"[UPLOAD] Đã đảm bảo cây thư mục: {folder_parts}, parent_id={parent_id}")
+        if subfolder:
+            parent_id = find_or_create_folder(service, subfolder, parent_id=parent_id)
+            log(f"[UPLOAD] Đã tạo/tìm subfolder: {subfolder}, parent_id={parent_id}")
 
-    file_metadata = {
-        "name": os.path.basename(local_path),
-        "parents": [parent_id],
-    }
+        file_metadata = {
+            "name": os.path.basename(local_path),
+            "parents": [parent_id],
+        }
 
-    media = MediaFileUpload(local_path, resumable=True)
-
-    created = service.files().create(body=file_metadata, media_body=media, fields="id").execute()
-    return created.get("id")
+        media = MediaFileUpload(local_path, resumable=True)
+        log(f"[UPLOAD] Đang upload file: {local_path}...")
+        created = service.files().create(body=file_metadata, media_body=media, fields="id").execute()
+        log(f"[UPLOAD] Upload thành công! File ID: {created.get('id')}")
+        return created.get("id")
+    except Exception as e:
+        log(f"[ERROR] Upload lên Google Drive thất bại: {e}")
+        return None
