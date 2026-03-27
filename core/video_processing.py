@@ -373,6 +373,29 @@ class VideoProcessor:
             stderr=proc.stderr.decode(errors='ignore')
         )
 
+    def add_logo(self, input_path: str, output_path: str, logo_path: str, position: str = 'top-left', overwrite: bool = False):
+        """Chèn logo vào video ở vị trí chỉ định (4 góc). Nếu logo không tồn tại thì bỏ qua."""
+        if not os.path.exists(input_path) or not os.path.exists(logo_path):
+            raise FileNotFoundError("Không tìm thấy file video hoặc logo.")
+        if os.path.exists(output_path) and not overwrite:
+            raise FileExistsError(f"File đã tồn tại: {output_path}")
+        # Xác định vị trí overlay
+        pos_map = {
+            'top-left': (10, 10),
+            'top-right': '(main_w-overlay_w-10):10',
+            'bottom-left': '10:(main_h-overlay_h-10)',
+            'bottom-right': '(main_w-overlay_w-10):(main_h-overlay_h-10)'
+        }
+        pos = pos_map.get(position, (10, 10))
+        # Xây dựng lệnh ffmpeg
+        import ffmpeg
+        stream = ffmpeg.input(input_path)
+        logo = ffmpeg.input(logo_path)
+        v = ffmpeg.overlay(stream.video, logo, x=pos[0] if isinstance(pos, tuple) else pos.split(':')[0], y=pos[1] if isinstance(pos, tuple) else pos.split(':')[1])
+        out = ffmpeg.output(v, stream.audio, output_path, vcodec='libx264', acodec='aac', strict='experimental', movflags='+faststart', shortest=None, y=None if overwrite else None)
+        ffmpeg.run(out, overwrite_output=overwrite, quiet=True)
+        return output_path
+
     # ---------- internals ----------
     def _probe_has_audio(self, input_path: Path) -> bool:
         cmd = [

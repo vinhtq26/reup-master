@@ -548,6 +548,38 @@ class VideoDownloaderApp(ctk.CTk):
         )
         self.url_entry.pack(fill="x", padx=10, pady=(0, 10))
 
+        # Tuỳ chọn chọn logo và vị trí chèn logo
+        logo_frame = ctk.CTkFrame(url_frame)
+        logo_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+        self.logo_path = None
+        self.logo_position = ctk.StringVar(value="top-left")
+
+        def choose_logo_file():
+            file_path = filedialog.askopenfilename(
+                title="Chọn file logo",
+                filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif")]
+            )
+            if file_path:
+                self.logo_path = file_path
+                logo_label.configure(text=f"Logo: {os.path.basename(file_path)}")
+            else:
+                self.logo_path = None
+                logo_label.configure(text="Logo: (không chọn)")
+
+        logo_btn = ctk.CTkButton(logo_frame, text="Chọn logo", command=choose_logo_file, width=120)
+        logo_btn.pack(side="left", padx=(0, 10))
+        logo_label = ctk.CTkLabel(logo_frame, text="Logo: (không chọn)")
+        logo_label.pack(side="left", padx=(0, 10))
+
+        ctk.CTkLabel(logo_frame, text="Vị trí:").pack(side="left", padx=(10, 2))
+        logo_pos_menu = ctk.CTkOptionMenu(
+            logo_frame,
+            values=["top-left", "top-right", "bottom-left", "bottom-right"],
+            variable=self.logo_position
+        )
+        logo_pos_menu.pack(side="left", padx=(0, 10))
+
         # Nút tải
         self.download_btn = ctk.CTkButton(
             url_frame,
@@ -663,6 +695,36 @@ class VideoDownloaderApp(ctk.CTk):
             height=35
         )
         self.channel_url_entry.pack(fill="x", padx=10, pady=5)
+
+        # Thêm tuỳ chọn chọn logo và vị trí khi thêm kênh
+        self.channel_logo_path = None
+        self.channel_logo_position = ctk.StringVar(value="top-left")
+
+        def choose_channel_logo_file():
+            file_path = filedialog.askopenfilename(
+                title="Chọn file logo cho kênh",
+                filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif")]
+            )
+            if file_path:
+                self.channel_logo_path = file_path
+                channel_logo_label.configure(text=f"Logo: {os.path.basename(file_path)}")
+            else:
+                self.channel_logo_path = None
+                channel_logo_label.configure(text="Logo: (không chọn)")
+
+        logo_frame = ctk.CTkFrame(add_frame)
+        logo_frame.pack(fill="x", padx=10, pady=(0, 10))
+        channel_logo_btn = ctk.CTkButton(logo_frame, text="Chọn logo kênh", command=choose_channel_logo_file, width=120)
+        channel_logo_btn.pack(side="left", padx=(0, 10))
+        channel_logo_label = ctk.CTkLabel(logo_frame, text="Logo: (không chọn)")
+        channel_logo_label.pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(logo_frame, text="Vị trí:").pack(side="left", padx=(10, 2))
+        channel_logo_pos_menu = ctk.CTkOptionMenu(
+            logo_frame,
+            values=["top-left", "top-right", "bottom-left", "bottom-right"],
+            variable=self.channel_logo_position
+        )
+        channel_logo_pos_menu.pack(side="left", padx=(0, 10))
 
         add_channel_btn = ctk.CTkButton(
             add_frame,
@@ -855,7 +917,7 @@ class VideoDownloaderApp(ctk.CTk):
 
             # Render expandable list by platform
             by_platform = {}
-            for channel_url, platform, _ in channels:
+            for channel_url, platform, *_ in channels:
                 by_platform.setdefault(platform, []).append(channel_url)
 
             for pf, urls in by_platform.items():
@@ -977,10 +1039,10 @@ class VideoDownloaderApp(ctk.CTk):
             ).pack(pady=20)
             return
 
-        for channel_url, platform, is_active in channels:
-            self._create_channel_item(channel_url, platform, bool(int(is_active)))
+        for channel_url, platform, is_active, logo_path, logo_position in channels:
+            self._create_channel_item(channel_url, platform, bool(int(is_active)), logo_path, logo_position)
 
-    def _create_channel_item(self, channel_url: str, platform: str, is_active: bool = True):
+    def _create_channel_item(self, channel_url: str, platform: str, is_active: bool = True, logo_path=None, logo_position=None):
         """Tạo item kênh (expand/collapse + active/inactive + mở folder + xóa)."""
         channel_container = ctk.CTkFrame(self.channels_scrollframe)
         channel_container.pack(fill="x", padx=5, pady=5)

@@ -42,7 +42,7 @@ class DownloadHistory:
             )
         ''')
 
-        # Bảng lưu thông tin kênh đang theo dõi
+        # Bảng lưu thông tin kênh đang theo dõi (thêm logo_path, logo_position)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS monitored_channels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,16 +52,20 @@ class DownloadHistory:
                 first_scan_done INTEGER DEFAULT 0,
                 last_check TIMESTAMP,
                 added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                logo_path TEXT,
+                logo_position TEXT,
                 UNIQUE(channel_url, platform)
             )
         ''')
 
-        # Migration: Thêm cột first_scan_done nếu bảng cũ chưa có
+        # Migration: Thêm cột logo_path, logo_position nếu bảng cũ chưa có
         try:
-            cursor.execute("ALTER TABLE monitored_channels ADD COLUMN first_scan_done INTEGER DEFAULT 0")
-            self.connection.commit()
-        except sqlite3.OperationalError:
-            # Cột đã tồn tại, bỏ qua
+            cursor.execute("ALTER TABLE monitored_channels ADD COLUMN logo_path TEXT")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE monitored_channels ADD COLUMN logo_position TEXT")
+        except Exception:
             pass
 
         self.connection.commit()
@@ -110,27 +114,29 @@ class DownloadHistory:
         except Exception as e:
             print(f"Lỗi khi thêm video vào lịch sử: {e}")
 
-    def add_monitored_channel(self, channel_url: str, platform: str) -> bool:
+    def add_monitored_channel(self, channel_url: str, platform: str, logo_path: str = None, logo_position: str = None) -> bool:
         """
-        Thêm kênh vào danh sách theo dõi
+        Thêm kênh vào danh sách theo dõi, kèm logo và vị trí nếu có
 
         Args:
             channel_url: URL kênh
             platform: Nền tảng
+            logo_path: Đường dẫn logo kênh (optional)
+            logo_position: Vị trí logo trên giao diện (optional)
 
         Returns:
             True nếu thêm thành công, False nếu thất bại
         """
+        cursor = self.connection.cursor()
         try:
-            cursor = self.connection.cursor()
             cursor.execute('''
-                INSERT OR IGNORE INTO monitored_channels (channel_url, platform)
-                VALUES (?, ?)
-            ''', (channel_url, platform))
+                INSERT OR IGNORE INTO monitored_channels (channel_url, platform, logo_path, logo_position)
+                VALUES (?, ?, ?, ?)
+            ''', (channel_url, platform, logo_path, logo_position))
             self.connection.commit()
-            return cursor.rowcount > 0
+            return True
         except Exception as e:
-            print(f"Lỗi khi thêm kênh theo dõi: {e}")
+            print(f"Lỗi khi thêm kênh: {e}")
             return False
 
     def remove_monitored_channel(self, channel_url: str, platform: str):
@@ -142,46 +148,41 @@ class DownloadHistory:
         )
         self.connection.commit()
 
-    def get_monitored_channels(self, platform: str = None, only_active: bool = True) -> List[tuple]:
-        """Lấy danh sách kênh theo dõi.
+    def get_monitored_channels(self, platform: str = None, only_active: bool = False):
+        """Lấy danh sách kênh đang theo dõi, kèm logo và vị trí
 
         Args:
             platform: lọc theo nền tảng (None = tất cả)
             only_active: True => chỉ lấy kênh đang active; False => lấy tất cả
 
         Returns:
-            List tuple (channel_url, platform, is_active)
+            List tuple (channel_url, platform, is_active, logo_path, logo_position)
         """
         cursor = self.connection.cursor()
-
-        if platform and only_active:
-            cursor.execute(
-                "SELECT channel_url, platform, is_active FROM monitored_channels WHERE platform = ? AND is_active = 1",
-                (platform,)
-            )
-        elif platform and not only_active:
-            cursor.execute(
-                "SELECT channel_url, platform, is_active FROM monitored_channels WHERE platform = ?",
-                (platform,)
-            )
-        elif not platform and only_active:
-            cursor.execute(
-                "SELECT channel_url, platform, is_active FROM monitored_channels WHERE is_active = 1"
-            )
-        else:
-            cursor.execute(
-                "SELECT channel_url, platform, is_active FROM monitored_channels"
-            )
-
+        query = 'SELECT channel_url, platform, is_active, logo_path, logo_position FROM monitored_channels'
+        params = []
+        if platform:
+            query += ' WHERE platform = ?'
+            params.append(platform)
+        if only_active:
+            query += (' AND' if platform else ' WHERE') + ' is_active = 1'
+        cursor.execute(query, params)
         return cursor.fetchall()
 
-    def set_channel_active(self, channel_url: str, platform: str, is_active: bool) -> None:
-        """Bật/tắt theo dõi (active) cho 1 kênh."""
+    def get_channel_logo_config(self, channel_url: str, platform: str):
+        """Lấy thông tin logo và vị trí của kênh"""
         cursor = self.connection.cursor()
-        cursor.execute(
-            "UPDATE monitored_channels SET is_active = ? WHERE channel_url = ? AND platform = ?",
-            (1 if is_active else 0, channel_url, platform)
-        )
+        cursor.execute('''
+            SELECT logo_path, logo_position FROM monitored_channels WHERE channel_url = ? AND platform = ?
+        ''', (channel_url, platform))
+        return cursor.fetchone() or (None, None)
+
+    def update_channel_logo_config(self, channel_url: str, platform: str, logo_path: str, logo_position: str):
+        """Cập nhật logo và vị trí cho kênh"""
+        cursor = self.connection.cursor()
+        cursor.execute('''
+            UPDATE monitored_channels SET logo_path = ?, logo_position = ? WHERE channel_url = ? AND platform = ?
+        ''', (logo_path, logo_position, channel_url, platform))
         self.connection.commit()
 
     def toggle_channel_active(self, channel_url: str, platform: str) -> bool:
