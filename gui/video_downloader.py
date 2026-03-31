@@ -32,9 +32,46 @@ class VideoDownloaderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
+        ctk.set_appearance_mode("light")
+        ctk.set_default_color_theme("blue")
+
         # Cấu hình cửa sổ chính
-        self.title("Video Downloader - Tải Video Đa Nền Tảng")
-        self.geometry("1000x700")
+        self.title("Studio Reup - Video Pipeline")
+        self.geometry("1380x860")
+        self.minsize(1180, 760)
+
+        self.theme = {
+            "bg": "#F4EEE7",
+            "panel": "#FBF7F2",
+            "panel_alt": "#F7F0E8",
+            "sidebar": "#11263B",
+            "sidebar_alt": "#1A3552",
+            "accent": "#C86A4A",
+            "accent_hover": "#B55B3C",
+            "accent_soft": "#EFD4CA",
+            "text": "#13263A",
+            "muted": "#6D7986",
+            "line": "#D8CBBE",
+            "success": "#2F7A68",
+            "warning": "#C68432",
+            "chip": "#E9DED1",
+        }
+        self.page_meta = {
+            "download": {
+                "title": "Download Studio",
+                "subtitle": "Nhanh, gọn, đẹp. Tải video, xử lý hậu kỳ và chuẩn bị asset cho reup.",
+            },
+            "monitor": {
+                "title": "Channel Radar",
+                "subtitle": "Theo dõi kênh, phát hiện video mới và kiểm soát trạng thái monitor theo phiên.",
+            },
+            "stats": {
+                "title": "Data Vault",
+                "subtitle": "Xem tải xuống, thư mục đang chạy và danh sách kênh dưới cùng một visual language.",
+            },
+        }
+        self.nav_buttons = {}
+        self.current_page = "download"
 
         # Khởi tạo các components
         self.database = DownloadHistory()
@@ -74,10 +111,6 @@ class VideoDownloaderApp(ctk.CTk):
 
         # Tạo giao diện
         self.create_widgets()
-
-        # Set theme
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
 
         # Mousewheel/trackpad UX: scroll mượt khi hover trên các scrollable frame
         self._wheel_bindings = []  # lưu để unbind nếu cần
@@ -134,109 +167,376 @@ class VideoDownloaderApp(ctk.CTk):
         except Exception:
             pass
 
+    def _create_metric_card(self, parent, title: str, value: str, note: str, accent: str = None):
+        card = ctk.CTkFrame(
+            parent,
+            fg_color=self.theme["panel"],
+            corner_radius=22,
+            border_width=1,
+            border_color=self.theme["line"],
+        )
+        ctk.CTkLabel(
+            card,
+            text=title,
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(anchor="w", padx=18, pady=(16, 4))
+        value_label = ctk.CTkLabel(
+            card,
+            text=value,
+            text_color=accent or self.theme["text"],
+            font=ctk.CTkFont(size=28, weight="bold"),
+        )
+        value_label.pack(anchor="w", padx=18)
+        ctk.CTkLabel(
+            card,
+            text=note,
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=12),
+            wraplength=220,
+            justify="left",
+        ).pack(anchor="w", padx=18, pady=(6, 16))
+        card.value_label = value_label
+        return card
+
+    def _create_nav_button(self, parent, key: str, label: str):
+        button = ctk.CTkButton(
+            parent,
+            text=label,
+            anchor="w",
+            height=44,
+            corner_radius=14,
+            fg_color="transparent",
+            hover_color=self.theme["sidebar_alt"],
+            text_color="#EDE5DD",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            command=lambda page=key: self.show_page(page),
+        )
+        button.pack(fill="x", pady=4)
+        self.nav_buttons[key] = button
+        return button
+
+    def _update_navigation_state(self):
+        for key, button in self.nav_buttons.items():
+            if key == self.current_page:
+                button.configure(
+                    fg_color=self.theme["accent"],
+                    hover_color=self.theme["accent_hover"],
+                    text_color="#FFF6F2",
+                )
+            else:
+                button.configure(
+                    fg_color="transparent",
+                    hover_color=self.theme["sidebar_alt"],
+                    text_color="#EDE5DD",
+                )
+
+    def show_page(self, page: str):
+        self.current_page = page
+        if hasattr(self, "page_frames") and page in self.page_frames:
+            self.page_frames[page].tkraise()
+        meta = self.page_meta.get(page, {})
+        if hasattr(self, "page_title_label"):
+            self.page_title_label.configure(text=meta.get("title", "Studio Reup"))
+        if hasattr(self, "page_subtitle_label"):
+            self.page_subtitle_label.configure(text=meta.get("subtitle", ""))
+        self._update_navigation_state()
+
+    def update_shell_snapshot(self):
+        if hasattr(self, "snapshot_root_value"):
+            current_root = os.path.basename(self.download_path.rstrip(os.sep)) or self.download_path
+            self.snapshot_root_value.configure(text=current_root)
+        if hasattr(self, "snapshot_pipeline_value"):
+            pipeline_parts = [
+                "Edit On" if self.edit_after_download else "Edit Off",
+                "Split On" if self.split_after_download else "Split Off",
+                "Drive On" if self.upload_to_drive else "Drive Off",
+            ]
+            self.snapshot_pipeline_value.configure(text=" | ".join(pipeline_parts))
+        if hasattr(self, "snapshot_monitor_value"):
+            try:
+                all_channels = self.database.get_monitored_channels(only_active=False)
+                active_channels = self.database.get_monitored_channels(only_active=True)
+                self.snapshot_monitor_value.configure(text=f"{len(active_channels)}/{len(all_channels)} active")
+            except Exception:
+                self.snapshot_monitor_value.configure(text="0/0 active")
+        if hasattr(self, "download_profile_label"):
+            outputs = ["video processed"]
+            outputs.append("part files" if self.split_after_download else "single file")
+            outputs.append("drive sync" if self.upload_to_drive else "local only")
+            self.download_profile_label.configure(
+                text=(
+                    f"Root: {self.download_path}\n"
+                    f"Folder: ROOT/Platform/Channel\n"
+                    f"Pipeline: {', '.join(outputs)}"
+                )
+            )
+        if hasattr(self, "monitor_summary_label"):
+            self.monitor_summary_label.configure(
+                text=(
+                    f"Quét mỗi {CHECK_INTERVAL // 60} phút. "
+                    f"Tối đa {MAX_CHANNELS_PER_PLATFORM} kênh mỗi nền tảng."
+                )
+            )
+
     def create_widgets(self):
         """Tạo các widget cho giao diện"""
+        self.configure(fg_color=self.theme["bg"])
 
-        # ========== HEADER ==========
-        header_frame = ctk.CTkFrame(self, corner_radius=0)
-        header_frame.pack(fill="x", padx=0, pady=0)
+        shell = ctk.CTkFrame(self, fg_color="transparent")
+        shell.pack(fill="both", expand=True, padx=18, pady=18)
+        shell.grid_columnconfigure(1, weight=1)
+        shell.grid_rowconfigure(0, weight=1)
 
-        title_label = ctk.CTkLabel(
-            header_frame,
-            text="🎬 VIDEO DOWNLOADER",
-            font=ctk.CTkFont(size=24, weight="bold")
+        sidebar = ctk.CTkFrame(
+            shell,
+            width=258,
+            corner_radius=30,
+            fg_color=self.theme["sidebar"],
+            border_width=0,
         )
-        title_label.pack(pady=15)
+        sidebar.grid(row=0, column=0, sticky="nsw", padx=(0, 16))
+        sidebar.grid_propagate(False)
 
-        subtitle_label = ctk.CTkLabel(
-            header_frame,
-            text="Hỗ trợ: YouTube | TikTok | Douyin | Facebook",
-            font=ctk.CTkFont(size=12)
+        brand_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
+        brand_frame.pack(fill="x", padx=22, pady=(24, 18))
+        ctk.CTkLabel(
+            brand_frame,
+            text="Studio Reup",
+            text_color="#FFF5EC",
+            font=ctk.CTkFont(size=24, weight="bold"),
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            brand_frame,
+            text="Premium desktop pipeline cho đội reup và internal ops.",
+            text_color="#B8C6D4",
+            font=ctk.CTkFont(size=12),
+            wraplength=205,
+            justify="left",
+        ).pack(anchor="w", pady=(8, 0))
+
+        nav_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
+        nav_frame.pack(fill="x", padx=18, pady=(6, 18))
+        self._create_nav_button(nav_frame, "download", "Download Studio")
+        self._create_nav_button(nav_frame, "monitor", "Channel Radar")
+        self._create_nav_button(nav_frame, "stats", "Data Vault")
+
+        snapshot_card = ctk.CTkFrame(sidebar, fg_color=self.theme["sidebar_alt"], corner_radius=24)
+        snapshot_card.pack(fill="x", padx=18, pady=(8, 0))
+        ctk.CTkLabel(
+            snapshot_card,
+            text="Live Snapshot",
+            text_color="#FFF5EC",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).pack(anchor="w", padx=18, pady=(16, 12))
+
+        def add_snapshot_row(label_text: str):
+            row = ctk.CTkFrame(snapshot_card, fg_color="transparent")
+            row.pack(fill="x", padx=18, pady=4)
+            ctk.CTkLabel(
+                row,
+                text=label_text,
+                text_color="#B8C6D4",
+                font=ctk.CTkFont(size=12),
+            ).pack(side="left")
+            value = ctk.CTkLabel(
+                row,
+                text="-",
+                text_color="#FFF5EC",
+                font=ctk.CTkFont(size=12, weight="bold"),
+            )
+            value.pack(side="right")
+            return value
+
+        self.snapshot_root_value = add_snapshot_row("Root")
+        self.snapshot_pipeline_value = add_snapshot_row("Pipeline")
+        self.snapshot_monitor_value = add_snapshot_row("Monitor")
+
+        ctk.CTkLabel(
+            snapshot_card,
+            text="Thiết kế theo hướng demo khách hàng: dữ liệu rõ, trạng thái rõ, thao tác chính luôn nổi bật.",
+            text_color="#B8C6D4",
+            font=ctk.CTkFont(size=11),
+            wraplength=200,
+            justify="left",
+        ).pack(anchor="w", padx=18, pady=(12, 18))
+
+        footer_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
+        footer_frame.pack(side="bottom", fill="x", padx=18, pady=18)
+        ctk.CTkLabel(
+            footer_frame,
+            text="YouTube • TikTok • Douyin • Facebook",
+            text_color="#90A0B1",
+            font=ctk.CTkFont(size=11),
+        ).pack(anchor="w")
+
+        main = ctk.CTkFrame(shell, fg_color="transparent")
+        main.grid(row=0, column=1, sticky="nsew")
+        main.grid_columnconfigure(0, weight=1)
+        main.grid_rowconfigure(2, weight=1)
+
+        header_card = ctk.CTkFrame(
+            main,
+            fg_color=self.theme["panel"],
+            corner_radius=30,
+            border_width=1,
+            border_color=self.theme["line"],
         )
-        subtitle_label.pack(pady=(0, 10))
+        header_card.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+        header_card.grid_columnconfigure(0, weight=1)
 
-        # ========== SETTINGS FRAME ==========
-        settings_frame = ctk.CTkFrame(self)
-        settings_frame.pack(fill="x", padx=20, pady=10)
+        title_wrap = ctk.CTkFrame(header_card, fg_color="transparent")
+        title_wrap.grid(row=0, column=0, sticky="w", padx=24, pady=(20, 10))
+        self.page_title_label = ctk.CTkLabel(
+            title_wrap,
+            text="Download Studio",
+            text_color=self.theme["text"],
+            font=ctk.CTkFont(size=30, weight="bold"),
+        )
+        self.page_title_label.pack(anchor="w")
+        self.page_subtitle_label = ctk.CTkLabel(
+            title_wrap,
+            text="Nhanh, gọn, đẹp. Tải video, xử lý hậu kỳ và chuẩn bị asset cho reup.",
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=13),
+        )
+        self.page_subtitle_label.pack(anchor="w", pady=(6, 0))
 
-        # Chọn thư mục lưu
-        path_label = ctk.CTkLabel(settings_frame, text="📁 Thư mục lưu:")
-        path_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        chips_wrap = ctk.CTkFrame(header_card, fg_color="transparent")
+        chips_wrap.grid(row=0, column=1, sticky="e", padx=24, pady=(20, 10))
+        self.monitoring_indicator = ctk.CTkLabel(
+            chips_wrap,
+            text="●",
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=20, weight="bold"),
+        )
+        self.monitoring_indicator.pack(side="left", padx=(0, 10))
+        self.runtime_chip = ctk.CTkLabel(
+            chips_wrap,
+            text="Internal Tool",
+            fg_color=self.theme["chip"],
+            text_color=self.theme["text"],
+            corner_radius=16,
+            padx=14,
+            pady=8,
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        self.runtime_chip.pack(side="left", padx=6)
+        self.status_label = ctk.CTkLabel(
+            chips_wrap,
+            text="San sang",
+            fg_color=self.theme["accent_soft"],
+            text_color=self.theme["accent"],
+            corner_radius=16,
+            padx=14,
+            pady=8,
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        self.status_label.pack(side="left", padx=6)
 
-        self.path_entry = ctk.CTkEntry(settings_frame, width=400)
+        controls_card = ctk.CTkFrame(
+            main,
+            fg_color=self.theme["panel_alt"],
+            corner_radius=26,
+            border_width=1,
+            border_color=self.theme["line"],
+        )
+        controls_card.grid(row=1, column=0, sticky="ew", pady=(0, 14))
+        controls_card.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            controls_card,
+            text="Storage Root",
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).grid(row=0, column=0, padx=(24, 12), pady=(18, 10), sticky="w")
+
+        self.path_entry = ctk.CTkEntry(
+            controls_card,
+            height=40,
+            corner_radius=16,
+            fg_color=self.theme["panel"],
+            border_color=self.theme["line"],
+            text_color=self.theme["text"],
+        )
         self.path_entry.insert(0, self.download_path)
-        self.path_entry.grid(row=0, column=1, padx=10, pady=10)
+        self.path_entry.grid(row=0, column=1, padx=0, pady=(18, 10), sticky="ew")
 
         browse_btn = ctk.CTkButton(
-            settings_frame,
-            text="Chọn thư mục",
-            width=120,
-            command=self.browse_folder
+            controls_card,
+            text="Chon thu muc",
+            width=132,
+            height=40,
+            corner_radius=16,
+            fg_color=self.theme["accent"],
+            hover_color=self.theme["accent_hover"],
+            command=self.browse_folder,
         )
-        browse_btn.grid(row=0, column=2, padx=10, pady=10)
+        browse_btn.grid(row=0, column=2, padx=16, pady=(18, 10))
 
-        # Checkbox: edit video sau khi tải
+        toggle_row = ctk.CTkFrame(controls_card, fg_color="transparent")
+        toggle_row.grid(row=1, column=0, columnspan=3, sticky="ew", padx=18, pady=(0, 18))
+
         self.edit_var = ctk.BooleanVar(value=self.edit_after_download)
         edit_cb = ctk.CTkCheckBox(
-            settings_frame,
-            text="✂️ Edit video sau khi tải (mirror + 1.07x + color grade + xoá metadata)",
+            toggle_row,
+            text="Edit after download",
             variable=self.edit_var,
             command=self.on_toggle_edit_after_download,
+            text_color=self.theme["text"],
+            fg_color=self.theme["accent"],
+            hover_color=self.theme["accent_hover"],
+            border_color=self.theme["accent"],
         )
-        edit_cb.grid(row=1, column=0, columnspan=3, padx=10, pady=(0, 10), sticky="w")
+        edit_cb.pack(side="left", padx=6)
 
-        # Checkbox: upload Google Drive sau khi tải
         self.upload_drive_var = ctk.BooleanVar(value=self.upload_to_drive)
         upload_drive_cb = ctk.CTkCheckBox(
-            settings_frame,
-            text="☁️ Tự động upload lên Google Drive sau khi tải xong",
+            toggle_row,
+            text="Google Drive sync",
             variable=self.upload_drive_var,
             command=self.on_toggle_upload_drive,
+            text_color=self.theme["text"],
+            fg_color=self.theme["accent"],
+            hover_color=self.theme["accent_hover"],
+            border_color=self.theme["accent"],
         )
-        upload_drive_cb.grid(row=2, column=0, columnspan=3, padx=10, pady=(0, 10), sticky="w")
+        upload_drive_cb.pack(side="left", padx=14)
 
-        # NEW: Checkbox: tách video nếu dài (chỉ chạy khi user bật)
         self.split_var = ctk.BooleanVar(value=self.split_after_download)
         split_cb = ctk.CTkCheckBox(
-            settings_frame,
-            text=f"✂️ Tách video nếu dài hơn {int(SPLIT_IF_LONGER_THAN_SECONDS)}s (mỗi part ~{int(SPLIT_SEGMENT_SECONDS)}s)",
+            toggle_row,
+            text=f"Auto split > {int(SPLIT_IF_LONGER_THAN_SECONDS)}s",
             variable=self.split_var,
             command=self.on_toggle_split_after_download,
+            text_color=self.theme["text"],
+            fg_color=self.theme["accent"],
+            hover_color=self.theme["accent_hover"],
+            border_color=self.theme["accent"],
         )
-        split_cb.grid(row=3, column=0, columnspan=3, padx=10, pady=(0, 10), sticky="w")
+        split_cb.pack(side="left", padx=14)
 
-        # ========== TAB VIEW ==========
-        self.tabview = ctk.CTkTabview(self)
-        self.tabview.pack(fill="both", expand=True, padx=20, pady=10)
+        self.pages_container = ctk.CTkFrame(main, fg_color="transparent")
+        self.pages_container.grid(row=2, column=0, sticky="nsew")
+        self.pages_container.grid_rowconfigure(0, weight=1)
+        self.pages_container.grid_columnconfigure(0, weight=1)
 
-        # Tạo các tab
-        self.tab_download = self.tabview.add("📥 Tải theo Link")
-        self.tab_monitor = self.tabview.add("👁️ Theo dõi Kênh")
-        self.tab_stats = self.tabview.add("📊 Thống kê")
+        self.tab_download = ctk.CTkFrame(self.pages_container, fg_color="transparent")
+        self.tab_monitor = ctk.CTkFrame(self.pages_container, fg_color="transparent")
+        self.tab_stats = ctk.CTkFrame(self.pages_container, fg_color="transparent")
+        self.page_frames = {
+            "download": self.tab_download,
+            "monitor": self.tab_monitor,
+            "stats": self.tab_stats,
+        }
+        for frame in self.page_frames.values():
+            frame.grid(row=0, column=0, sticky="nsew")
 
-        # Tạo nội dung cho từng tab
         self.create_download_tab()
         self.create_monitor_tab()
         self.create_stats_tab()
-
-        # ========== STATUS BAR ==========
-        self.status_frame = ctk.CTkFrame(self, corner_radius=0)
-        self.status_frame.pack(fill="x", side="bottom", padx=0, pady=0)
-
-        self.status_label = ctk.CTkLabel(
-            self.status_frame,
-            text="✓ Sẵn sàng",
-            font=ctk.CTkFont(size=11)
-        )
-        self.status_label.pack(pady=8, padx=10, side="left")
-
-        self.monitoring_indicator = ctk.CTkLabel(
-            self.status_frame,
-            text="●",
-            text_color="gray",
-            font=ctk.CTkFont(size=20)
-        )
-        self.monitoring_indicator.pack(pady=5, padx=10, side="right")
+        self.show_page("download")
+        self.update_shell_snapshot()
 
     def on_toggle_edit_after_download(self):
         """Lưu setting khi user bật/tắt edit."""
@@ -253,6 +553,7 @@ class VideoDownloaderApp(ctk.CTk):
                 split_after_download=self.split_after_download,
             )
         )
+        self.update_shell_snapshot()
         self.log_message(f"✂️ Edit sau khi tải: {'BẬT' if self.edit_after_download else 'TẮT'}")
 
     def on_toggle_upload_drive(self):
@@ -267,6 +568,7 @@ class VideoDownloaderApp(ctk.CTk):
                 split_after_download=bool(getattr(current, "split_after_download", False)),
             )
         )
+        self.update_shell_snapshot()
         self.log_message(f"☁️ Upload Google Drive sau khi tải: {'BẬT' if self.upload_to_drive else 'TẮT'}")
 
     def on_toggle_split_after_download(self):
@@ -281,6 +583,7 @@ class VideoDownloaderApp(ctk.CTk):
                 split_after_download=self.split_after_download,
             )
         )
+        self.update_shell_snapshot()
         self.log_message(f"✂️ Tách video sau khi tải: {'BẬT' if self.split_after_download else 'TẮT'}")
 
     def _postprocess_master(self, file_path: str) -> str:
@@ -353,6 +656,15 @@ class VideoDownloaderApp(ctk.CTk):
     def download_single_video(self):
         """Tải một video từ URL"""
         url = self.url_entry.get().strip()
+        selected_quality = (self.quality_selector.get() if hasattr(self, "quality_selector") else "Best").lower()
+        quality_map = {
+            "best": "best",
+            "4k": "4k",
+            "1080p": "1080p",
+            "720p": "720p",
+            "480p": "480p",
+        }
+        quality = quality_map.get(selected_quality, "best")
 
         if not url:
             messagebox.showwarning("Cảnh báo", "Vui lòng nhập URL video!")
@@ -375,7 +687,7 @@ class VideoDownloaderApp(ctk.CTk):
                 split=self.split_after_download,
                 extract_audio=self.edit_after_download,  # hoặc thêm flag riêng nếu muốn tách âm độc lập
                 progress_callback=None,
-                quality="best",
+                quality=quality,
                 monitor=None,
                 channel_url=None
             )
@@ -439,11 +751,13 @@ class VideoDownloaderApp(ctk.CTk):
             self.channel_monitor.start_monitoring(status_callback=self.monitoring_callback)
 
             self.monitor_btn.configure(
-                text="⏸️ DỪNG THEO DÕI",
-                fg_color="red",
-                hover_color="darkred"
+                text="DUNG THEO DOI",
+                fg_color="#B5483D",
+                hover_color="#91372F"
             )
-            self.monitoring_indicator.configure(text_color="green")
+            self.monitoring_indicator.configure(text_color=self.theme["success"])
+            if hasattr(self, "monitor_feed_label"):
+                self.monitor_feed_label.configure(text="Monitor đang chạy. Hệ thống sẽ quét theo cadence hiện tại.")
             self.log_message("▶️ Đã bắt đầu theo dõi kênh tự động")
             self.update_status("🔴 Đang theo dõi kênh...")
         else:
@@ -452,17 +766,22 @@ class VideoDownloaderApp(ctk.CTk):
             self.channel_monitor.stop_monitoring()
 
             self.monitor_btn.configure(
-                text="▶️ BẮT ĐẦU THEO DÕI",
-                fg_color="green",
-                hover_color="darkgreen"
+                text="BAT DAU THEO DOI",
+                fg_color=self.theme["success"],
+                hover_color="#266657"
             )
-            self.monitoring_indicator.configure(text_color="gray")
+            self.monitoring_indicator.configure(text_color=self.theme["muted"])
+            if hasattr(self, "monitor_feed_label"):
+                self.monitor_feed_label.configure(text="Monitor đã dừng. Chỉ còn thao tác quản trị và xem dữ liệu.")
             self.log_message("⏸️ Đã dừng theo dõi kênh")
             self.update_status("✓ Đã dừng theo dõi")
+        self.update_shell_snapshot()
 
     def monitoring_callback(self, message: str):
         """Callback từ channel monitor"""
         self.log_message(message)
+        if hasattr(self, "monitor_feed_label"):
+            self.monitor_feed_label.configure(text=message)
 
         # Auto-refresh danh sách khi có video mới được tải
         if "✓ Đã tải:" in message or "✅ Hoàn thành lần quét đầu" in message:
@@ -492,6 +811,7 @@ class VideoDownloaderApp(ctk.CTk):
                 )
             )
 
+            self.update_shell_snapshot()
             self.log_message(f"✓ Đã chọn thư mục gốc: {folder}")
 
     def log_message(self, message: str):
@@ -499,6 +819,8 @@ class VideoDownloaderApp(ctk.CTk):
         timestamp = time.strftime("%H:%M:%S")
         self.log_textbox.insert("end", f"[{timestamp}] {message}\n")
         self.log_textbox.see("end")
+        if hasattr(self, "activity_label"):
+            self.activity_label.configure(text=message)
 
     def clear_log(self):
         """Xóa toàn bộ nội dung log trên UI."""
@@ -514,6 +836,7 @@ class VideoDownloaderApp(ctk.CTk):
     def update_status(self, message: str):
         """Cập nhật status bar"""
         self.status_label.configure(text=message)
+        self.runtime_chip.configure(text="Monitoring" if self.is_monitoring else "Internal Tool")
 
     def update_platform_example(self, choice):
         """Cập nhật ví dụ URL theo platform được chọn."""
@@ -529,28 +852,82 @@ class VideoDownloaderApp(ctk.CTk):
 
     def create_download_tab(self):
         """Tạo tab tải video theo link"""
+        container = ctk.CTkFrame(self.tab_download, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=4, pady=4)
+        container.grid_columnconfigure(0, weight=3)
+        container.grid_columnconfigure(1, weight=2)
+        container.grid_rowconfigure(1, weight=1)
 
-        # Frame nhập URL
-        url_frame = ctk.CTkFrame(self.tab_download)
-        url_frame.pack(fill="x", padx=20, pady=20)
-
-        url_label = ctk.CTkLabel(
-            url_frame,
-            text="🔗 Nhập link video:",
-            font=ctk.CTkFont(size=14, weight="bold")
+        hero = ctk.CTkFrame(
+            container,
+            fg_color=self.theme["panel"],
+            corner_radius=28,
+            border_width=1,
+            border_color=self.theme["line"],
         )
-        url_label.pack(anchor="w", padx=10, pady=(10, 5))
+        hero.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=(0, 12))
+        ctk.CTkLabel(
+            hero,
+            text="Download Studio",
+            text_color=self.theme["text"],
+            font=ctk.CTkFont(size=24, weight="bold"),
+        ).pack(anchor="w", padx=22, pady=(20, 4))
+        ctk.CTkLabel(
+            hero,
+            text="Một màn cho cả tải, chọn chất lượng, branding và trạng thái pipeline.",
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=12),
+        ).pack(anchor="w", padx=22)
+
+        platform_row = ctk.CTkFrame(hero, fg_color="transparent")
+        platform_row.pack(fill="x", padx=18, pady=(16, 10))
+        for platform_name, data in SUPPORTED_PLATFORMS.items():
+            ctk.CTkLabel(
+                platform_row,
+                text=platform_name,
+                fg_color=data.get("color", self.theme["chip"]),
+                text_color="#FFFFFF" if platform_name != "TikTok" else "#FFFFFF",
+                corner_radius=14,
+                padx=12,
+                pady=6,
+                font=ctk.CTkFont(size=11, weight="bold"),
+            ).pack(side="left", padx=4)
 
         self.url_entry = ctk.CTkEntry(
-            url_frame,
+            hero,
             placeholder_text="Dán link video từ YouTube, TikTok, Douyin hoặc Facebook...",
-            height=40
+            height=46,
+            corner_radius=16,
+            fg_color="#FFFFFF",
+            border_color=self.theme["line"],
+            text_color=self.theme["text"],
         )
-        self.url_entry.pack(fill="x", padx=10, pady=(0, 10))
+        self.url_entry.pack(fill="x", padx=22, pady=(0, 14))
 
-        # Tuỳ chọn chọn logo và vị trí chèn logo
-        logo_frame = ctk.CTkFrame(url_frame)
-        logo_frame.pack(fill="x", padx=10, pady=(0, 10))
+        quality_frame = ctk.CTkFrame(hero, fg_color=self.theme["panel_alt"], corner_radius=18)
+        quality_frame.pack(fill="x", padx=22, pady=(0, 14))
+        ctk.CTkLabel(
+            quality_frame,
+            text="Quality preset",
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(anchor="w", padx=16, pady=(14, 8))
+        self.quality_selector = ctk.CTkSegmentedButton(
+            quality_frame,
+            values=["Best", "4K", "1080p", "720p", "480p"],
+            fg_color=self.theme["chip"],
+            selected_color=self.theme["accent"],
+            selected_hover_color=self.theme["accent_hover"],
+            unselected_color=self.theme["chip"],
+            unselected_hover_color=self.theme["accent_soft"],
+            text_color=self.theme["text"],
+            corner_radius=12,
+        )
+        self.quality_selector.pack(fill="x", padx=16, pady=(0, 16))
+        self.quality_selector.set("Best")
+
+        logo_frame = ctk.CTkFrame(hero, fg_color="transparent")
+        logo_frame.pack(fill="x", padx=22, pady=(0, 16))
 
         self.logo_path = None
         self.logo_position = ctk.StringVar(value="top-left")
@@ -565,138 +942,288 @@ class VideoDownloaderApp(ctk.CTk):
                 logo_label.configure(text=f"Logo: {os.path.basename(file_path)}")
             else:
                 self.logo_path = None
-                logo_label.configure(text="Logo: (không chọn)")
+                logo_label.configure(text="Logo: khong chon")
 
-        logo_btn = ctk.CTkButton(logo_frame, text="Chọn logo", command=choose_logo_file, width=120)
+        logo_btn = ctk.CTkButton(
+            logo_frame,
+            text="Chon logo",
+            command=choose_logo_file,
+            width=120,
+            corner_radius=14,
+            fg_color=self.theme["panel_alt"],
+            hover_color=self.theme["accent_soft"],
+            text_color=self.theme["text"],
+        )
         logo_btn.pack(side="left", padx=(0, 10))
-        logo_label = ctk.CTkLabel(logo_frame, text="Logo: (không chọn)")
+        logo_label = ctk.CTkLabel(
+            logo_frame,
+            text="Logo: khong chon",
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=12),
+        )
         logo_label.pack(side="left", padx=(0, 10))
 
-        ctk.CTkLabel(logo_frame, text="Vị trí:").pack(side="left", padx=(10, 2))
+        ctk.CTkLabel(
+            logo_frame,
+            text="Vi tri",
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(side="left", padx=(10, 6))
         logo_pos_menu = ctk.CTkOptionMenu(
             logo_frame,
             values=["top-left", "top-right", "bottom-left", "bottom-right"],
-            variable=self.logo_position
+            variable=self.logo_position,
+            corner_radius=14,
+            fg_color=self.theme["accent"],
+            button_color=self.theme["accent"],
+            button_hover_color=self.theme["accent_hover"],
         )
         logo_pos_menu.pack(side="left", padx=(0, 10))
 
-        # Nút tải
+        action_row = ctk.CTkFrame(hero, fg_color="transparent")
+        action_row.pack(fill="x", padx=22, pady=(0, 20))
         self.download_btn = ctk.CTkButton(
-            url_frame,
-            text="⬇️ Tải Video",
-            height=40,
+            action_row,
+            text="Tai video ngay",
+            height=46,
             font=ctk.CTkFont(size=14, weight="bold"),
+            corner_radius=16,
+            fg_color=self.theme["accent"],
+            hover_color=self.theme["accent_hover"],
             command=self.download_single_video
         )
-        self.download_btn.pack(fill="x", padx=10, pady=(0, 10))
+        self.download_btn.pack(side="left", padx=(0, 14))
 
-        # Progress bar
-        self.progress_bar = ctk.CTkProgressBar(url_frame)
-        self.progress_bar.pack(fill="x", padx=10, pady=(0, 10))
+        self.progress_bar = ctk.CTkProgressBar(
+            action_row,
+            progress_color=self.theme["accent"],
+            fg_color=self.theme["chip"],
+        )
+        self.progress_bar.pack(side="left", fill="x", expand=True, pady=8)
         self.progress_bar.set(0)
 
-        # Log frame
-        log_frame = ctk.CTkFrame(self.tab_download)
-        log_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-
-        log_label = ctk.CTkLabel(
-            log_frame,
-            text="📝 Nhật ký tải xuống:",
-            font=ctk.CTkFont(size=14, weight="bold")
+        right_panel = ctk.CTkFrame(
+            container,
+            fg_color=self.theme["panel"],
+            corner_radius=28,
+            border_width=1,
+            border_color=self.theme["line"],
         )
-        log_label.pack(anchor="w", padx=10, pady=(10, 5), side="left")
+        right_panel.grid(row=0, column=1, sticky="nsew", pady=(0, 12))
+        ctk.CTkLabel(
+            right_panel,
+            text="Pipeline Profile",
+            text_color=self.theme["text"],
+            font=ctk.CTkFont(size=18, weight="bold"),
+        ).pack(anchor="w", padx=22, pady=(20, 4))
+        self.download_profile_label = ctk.CTkLabel(
+            right_panel,
+            text="",
+            text_color=self.theme["muted"],
+            justify="left",
+            wraplength=320,
+            font=ctk.CTkFont(size=12),
+        )
+        self.download_profile_label.pack(anchor="w", padx=22, pady=(0, 18))
 
+        profile_cards = ctk.CTkFrame(right_panel, fg_color="transparent")
+        profile_cards.pack(fill="x", padx=18, pady=(0, 8))
+        self._create_metric_card(
+            profile_cards,
+            "Branding",
+            "Logo + corner",
+            "Watermark sẽ đi cùng file processed nếu bạn chọn logo trước khi tải.",
+            accent=self.theme["accent"],
+        ).pack(fill="x", pady=6)
+        self._create_metric_card(
+            profile_cards,
+            "Output",
+            "MP4 first",
+            "Giữ cấu trúc rõ: file processed, part files nếu split và asset audio khi luồng yêu cầu.",
+            accent=self.theme["success"],
+        ).pack(fill="x", pady=6)
+
+        activity_card = ctk.CTkFrame(
+            right_panel,
+            fg_color=self.theme["panel_alt"],
+            corner_radius=20,
+        )
+        activity_card.pack(fill="x", padx=18, pady=(8, 18))
+        ctk.CTkLabel(
+            activity_card,
+            text="Live activity",
+            text_color=self.theme["text"],
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).pack(anchor="w", padx=16, pady=(14, 6))
+        self.activity_label = ctk.CTkLabel(
+            activity_card,
+            text="San sang nhan link moi.",
+            text_color=self.theme["muted"],
+            justify="left",
+            wraplength=320,
+            font=ctk.CTkFont(size=12),
+        )
+        self.activity_label.pack(anchor="w", padx=16, pady=(0, 14))
+
+        log_frame = ctk.CTkFrame(
+            container,
+            fg_color=self.theme["panel"],
+            corner_radius=28,
+            border_width=1,
+            border_color=self.theme["line"],
+        )
+        log_frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
+
+        log_header = ctk.CTkFrame(log_frame, fg_color="transparent")
+        log_header.pack(fill="x", padx=18, pady=(18, 8))
+        ctk.CTkLabel(
+            log_header,
+            text="Download feed",
+            text_color=self.theme["text"],
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).pack(side="left")
         clear_log_btn = ctk.CTkButton(
-            log_frame,
-            text="🧹 Clear log",
-            width=110,
-            height=28,
+            log_header,
+            text="Clear log",
+            width=104,
+            height=32,
+            corner_radius=12,
             command=self.clear_log,
-            fg_color="gray25",
-            hover_color="gray35",
+            fg_color=self.theme["panel_alt"],
+            hover_color=self.theme["accent_soft"],
+            text_color=self.theme["text"],
         )
-        clear_log_btn.pack(anchor="e", padx=10, pady=(10, 5), side="right")
+        clear_log_btn.pack(side="right")
 
-        self.log_textbox = ctk.CTkTextbox(log_frame, height=200)
-        self.log_textbox.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self.log_textbox = ctk.CTkTextbox(
+            log_frame,
+            height=220,
+            corner_radius=20,
+            fg_color="#FFFDFC",
+            border_width=0,
+            text_color=self.theme["text"],
+        )
+        self.log_textbox.pack(fill="both", expand=True, padx=18, pady=(0, 18))
+        self.update_shell_snapshot()
 
     def create_monitor_tab(self):
         """Tạo tab theo dõi kênh"""
+        container = ctk.CTkFrame(self.tab_monitor, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=4, pady=4)
 
-        # Control frame
-        control_frame = ctk.CTkFrame(self.tab_monitor)
-        control_frame.pack(fill="x", padx=20, pady=20)
+        summary_row = ctk.CTkFrame(container, fg_color="transparent")
+        summary_row.pack(fill="x", pady=(0, 12))
+        for column in range(3):
+            summary_row.grid_columnconfigure(column, weight=1)
 
-        title_label = ctk.CTkLabel(
-            control_frame,
-            text="👁️ Tự động theo dõi và tải video mới từ kênh",
-            font=ctk.CTkFont(size=14, weight="bold")
+        self.monitor_channels_card = self._create_metric_card(
+            summary_row,
+            "Tracked channels",
+            "0",
+            "Toàn bộ kênh đang lưu trong database, bao gồm active và inactive.",
+            accent=self.theme["accent"],
         )
-        title_label.pack(pady=(10, 5))
-
-        info_label = ctk.CTkLabel(
-            control_frame,
-            text=f"Giới hạn: {MAX_CHANNELS_PER_PLATFORM} kênh/nền tảng | Kiểm tra mỗi {CHECK_INTERVAL//60} phút",
-            font=ctk.CTkFont(size=11),
-            text_color="gray"
+        self.monitor_channels_card.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.monitor_active_card = self._create_metric_card(
+            summary_row,
+            "Live monitor",
+            "0 active",
+            "Những kênh được tick active sẽ được monitor đưa vào phiên quét.",
+            accent=self.theme["success"],
         )
-        info_label.pack(pady=(0, 10))
+        self.monitor_active_card.grid(row=0, column=1, sticky="ew", padx=8)
+        self.monitor_interval_card = self._create_metric_card(
+            summary_row,
+            "Cadence",
+            f"{CHECK_INTERVAL // 60} min",
+            "Tần suất quét hiện tại của monitor. Dùng để cân bằng tốc độ và độ ổn định.",
+            accent=self.theme["warning"],
+        )
+        self.monitor_interval_card.grid(row=0, column=2, sticky="ew", padx=(8, 0))
 
-        # Nút Start/Stop
+        body = ctk.CTkFrame(container, fg_color="transparent")
+        body.pack(fill="both", expand=True)
+        body.grid_columnconfigure(0, weight=5)
+        body.grid_columnconfigure(1, weight=3)
+        body.grid_rowconfigure(1, weight=1)
+
+        add_frame = ctk.CTkFrame(
+            body,
+            fg_color=self.theme["panel"],
+            corner_radius=28,
+            border_width=1,
+            border_color=self.theme["line"],
+        )
+        add_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=(0, 12))
+        ctk.CTkLabel(
+            add_frame,
+            text="Channel intake",
+            text_color=self.theme["text"],
+            font=ctk.CTkFont(size=20, weight="bold"),
+        ).pack(anchor="w", padx=22, pady=(20, 4))
+        self.monitor_summary_label = ctk.CTkLabel(
+            add_frame,
+            text="",
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=12),
+            justify="left",
+        )
+        self.monitor_summary_label.pack(anchor="w", padx=22, pady=(0, 12))
+
         self.monitor_btn = ctk.CTkButton(
-            control_frame,
-            text="▶️ BẮT ĐẦU THEO DÕI",
-            height=40,
+            add_frame,
+            text="BAT DAU THEO DOI",
+            height=44,
             font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color="green",
-            hover_color="darkgreen",
+            corner_radius=16,
+            fg_color=self.theme["success"],
+            hover_color="#266657",
             command=self.toggle_monitoring
         )
-        self.monitor_btn.pack(fill="x", padx=10, pady=(0, 10))
+        self.monitor_btn.pack(fill="x", padx=22, pady=(0, 16))
 
-        # Add channel frame
-        add_frame = ctk.CTkFrame(self.tab_monitor)
-        add_frame.pack(fill="x", padx=20, pady=(0, 10))
+        platform_frame = ctk.CTkFrame(add_frame, fg_color=self.theme["panel_alt"], corner_radius=18)
+        platform_frame.pack(fill="x", padx=22, pady=(0, 12))
 
-        add_label = ctk.CTkLabel(
-            add_frame,
-            text="➕ Thêm kênh mới:",
-            font=ctk.CTkFont(size=13, weight="bold")
-        )
-        add_label.pack(anchor="w", padx=10, pady=(10, 5))
-
-        # Chọn platform
-        platform_frame = ctk.CTkFrame(add_frame)
-        platform_frame.pack(fill="x", padx=10, pady=5)
-
-        ctk.CTkLabel(platform_frame, text="Nền tảng:").pack(side="left", padx=5)
+        ctk.CTkLabel(
+            platform_frame,
+            text="Platform",
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(side="left", padx=14, pady=14)
 
         self.platform_var = ctk.StringVar(value="YouTube")
         self.platform_menu = ctk.CTkOptionMenu(
             platform_frame,
             values=list(SUPPORTED_PLATFORMS.keys()),
             variable=self.platform_var,
-            command=self.update_platform_example
+            command=self.update_platform_example,
+            corner_radius=14,
+            fg_color=self.theme["accent"],
+            button_color=self.theme["accent"],
+            button_hover_color=self.theme["accent_hover"],
         )
-        self.platform_menu.pack(side="left", padx=5)
+        self.platform_menu.pack(side="left", padx=6, pady=10)
 
         self.platform_example_label = ctk.CTkLabel(
             platform_frame,
             text="VD: https://www.youtube.com/@channelname",
-            text_color="gray",
-            font=ctk.CTkFont(size=10)
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=11)
         )
         self.platform_example_label.pack(side="left", padx=10)
 
-        # Nhập URL kênh
         self.channel_url_entry = ctk.CTkEntry(
             add_frame,
             placeholder_text="Nhập URL kênh...",
-            height=35
+            height=42,
+            corner_radius=16,
+            fg_color="#FFFFFF",
+            border_color=self.theme["line"],
+            text_color=self.theme["text"],
         )
-        self.channel_url_entry.pack(fill="x", padx=10, pady=5)
+        self.channel_url_entry.pack(fill="x", padx=22, pady=(0, 12))
 
-        # Thêm tuỳ chọn chọn logo và vị trí khi thêm kênh
         self.channel_logo_path = None
         self.channel_logo_position = ctk.StringVar(value="top-left")
 
@@ -710,96 +1237,180 @@ class VideoDownloaderApp(ctk.CTk):
                 channel_logo_label.configure(text=f"Logo: {os.path.basename(file_path)}")
             else:
                 self.channel_logo_path = None
-                channel_logo_label.configure(text="Logo: (không chọn)")
+                channel_logo_label.configure(text="Logo: khong chon")
 
-        logo_frame = ctk.CTkFrame(add_frame)
-        logo_frame.pack(fill="x", padx=10, pady=(0, 10))
-        channel_logo_btn = ctk.CTkButton(logo_frame, text="Chọn logo kênh", command=choose_channel_logo_file, width=120)
+        logo_frame = ctk.CTkFrame(add_frame, fg_color="transparent")
+        logo_frame.pack(fill="x", padx=22, pady=(0, 14))
+        channel_logo_btn = ctk.CTkButton(
+            logo_frame,
+            text="Chon logo kenh",
+            command=choose_channel_logo_file,
+            width=138,
+            corner_radius=14,
+            fg_color=self.theme["panel_alt"],
+            hover_color=self.theme["accent_soft"],
+            text_color=self.theme["text"],
+        )
         channel_logo_btn.pack(side="left", padx=(0, 10))
-        channel_logo_label = ctk.CTkLabel(logo_frame, text="Logo: (không chọn)")
+        channel_logo_label = ctk.CTkLabel(
+            logo_frame,
+            text="Logo: khong chon",
+            text_color=self.theme["muted"],
+        )
         channel_logo_label.pack(side="left", padx=(0, 10))
-        ctk.CTkLabel(logo_frame, text="Vị trí:").pack(side="left", padx=(10, 2))
+        ctk.CTkLabel(
+            logo_frame,
+            text="Vi tri",
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(side="left", padx=(10, 4))
         channel_logo_pos_menu = ctk.CTkOptionMenu(
             logo_frame,
             values=["top-left", "top-right", "bottom-left", "bottom-right"],
-            variable=self.channel_logo_position
+            variable=self.channel_logo_position,
+            corner_radius=14,
+            fg_color=self.theme["accent"],
+            button_color=self.theme["accent"],
+            button_hover_color=self.theme["accent_hover"],
         )
-        channel_logo_pos_menu.pack(side="left", padx=(0, 10))
+        channel_logo_pos_menu.pack(side="left")
 
         add_channel_btn = ctk.CTkButton(
             add_frame,
-            text="Thêm kênh",
+            text="Them kenh vao radar",
             command=self.add_channel,
-            height=35
+            height=42,
+            corner_radius=16,
+            fg_color=self.theme["accent"],
+            hover_color=self.theme["accent_hover"],
         )
-        add_channel_btn.pack(fill="x", padx=10, pady=(5, 10))
+        add_channel_btn.pack(fill="x", padx=22, pady=(0, 20))
 
-        # Danh sách kênh đang theo dõi
-        list_frame = ctk.CTkFrame(self.tab_monitor)
-        list_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        monitor_feed = ctk.CTkFrame(
+            body,
+            fg_color=self.theme["panel"],
+            corner_radius=28,
+            border_width=1,
+            border_color=self.theme["line"],
+        )
+        monitor_feed.grid(row=0, column=1, sticky="nsew", pady=(0, 12))
+        ctk.CTkLabel(
+            monitor_feed,
+            text="Radar notes",
+            text_color=self.theme["text"],
+            font=ctk.CTkFont(size=18, weight="bold"),
+        ).pack(anchor="w", padx=22, pady=(20, 6))
+        ctk.CTkLabel(
+            monitor_feed,
+            text=(
+                "UI đang ưu tiên rõ ràng cho sales demo: start monitor, cadence, "
+                "tracked channels và trạng thái active phải nhìn ra ngay."
+            ),
+            text_color=self.theme["muted"],
+            wraplength=300,
+            justify="left",
+            font=ctk.CTkFont(size=12),
+        ).pack(anchor="w", padx=22)
+        self.monitor_feed_label = ctk.CTkLabel(
+            monitor_feed,
+            text="Monitor chưa chạy.",
+            text_color=self.theme["text"],
+            fg_color=self.theme["panel_alt"],
+            corner_radius=18,
+            wraplength=290,
+            justify="left",
+            padx=16,
+            pady=16,
+            font=ctk.CTkFont(size=12),
+        )
+        self.monitor_feed_label.pack(fill="x", padx=22, pady=(18, 22))
 
-        # Header với nút refresh
+        list_frame = ctk.CTkFrame(
+            body,
+            fg_color=self.theme["panel"],
+            corner_radius=28,
+            border_width=1,
+            border_color=self.theme["line"],
+        )
+        list_frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
+
         header_frame = ctk.CTkFrame(list_frame, fg_color="transparent")
-        header_frame.pack(fill="x", padx=10, pady=(10, 5))
+        header_frame.pack(fill="x", padx=18, pady=(18, 8))
 
-        list_label = ctk.CTkLabel(
+        ctk.CTkLabel(
             header_frame,
-            text="📋 Danh sách kênh đang theo dõi:",
-            font=ctk.CTkFont(size=13, weight="bold")
-        )
-        list_label.pack(side="left", anchor="w")
+            text="Tracked channel cards",
+            text_color=self.theme["text"],
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(side="left")
 
         refresh_btn = ctk.CTkButton(
             header_frame,
-            text="🔄 Refresh",
-            width=100,
-            height=28,
+            text="Refresh",
+            width=96,
+            height=32,
             command=self.refresh_channel_list,
-            fg_color="green",
-            hover_color="darkgreen"
+            corner_radius=12,
+            fg_color=self.theme["panel_alt"],
+            hover_color=self.theme["accent_soft"],
+            text_color=self.theme["text"],
         )
         refresh_btn.pack(side="right", padx=5)
 
-        # ScrollableFrame cho danh sách kênh
-        self.channels_scrollframe = ctk.CTkScrollableFrame(list_frame, height=200)
-        self.channels_scrollframe.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self.channels_scrollframe = ctk.CTkScrollableFrame(
+            list_frame,
+            height=280,
+            fg_color="transparent",
+        )
+        self.channels_scrollframe.pack(fill="both", expand=True, padx=14, pady=(0, 14))
+        self._bind_mousewheel_for_scrollable(self.channels_scrollframe)
 
-        # Cập nhật danh sách kênh
         self.refresh_channel_list()
+        self.update_shell_snapshot()
 
     def create_stats_tab(self):
         """Tạo tab thống kê"""
+        stats_frame = ctk.CTkFrame(self.tab_stats, fg_color="transparent")
+        stats_frame.pack(fill="both", expand=True, padx=4, pady=4)
 
-        stats_frame = ctk.CTkFrame(self.tab_stats)
-        # Giảm padding 2 bên để tab Thống kê rộng hơn, đặc biệt là danh sách kênh theo dõi
-        stats_frame.pack(fill="both", expand=True, padx=10, pady=20)
-
-        title_label = ctk.CTkLabel(
+        header = ctk.CTkFrame(
             stats_frame,
-            text="📊 Thống kê tải xuống",
-            font=ctk.CTkFont(size=18, weight="bold")
+            fg_color=self.theme["panel"],
+            corner_radius=28,
+            border_width=1,
+            border_color=self.theme["line"],
         )
-        title_label.pack(pady=(10, 10))
-
-        # Nút refresh
+        header.pack(fill="x", pady=(0, 12))
+        ctk.CTkLabel(
+            header,
+            text="Data Vault",
+            text_color=self.theme["text"],
+            font=ctk.CTkFont(size=24, weight="bold"),
+        ).pack(anchor="w", padx=22, pady=(20, 4))
+        ctk.CTkLabel(
+            header,
+            text="Nhìn tải xuống, cấu trúc thư mục và tracked channels dưới góc nhìn sản phẩm.",
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=12),
+        ).pack(anchor="w", padx=22, pady=(0, 12))
         refresh_btn = ctk.CTkButton(
-            stats_frame,
-            text="🔄 Làm mới thống kê",
+            header,
+            text="Lam moi thong ke",
             command=self.update_stats,
-            height=35
+            height=40,
+            width=170,
+            corner_radius=14,
+            fg_color=self.theme["accent"],
+            hover_color=self.theme["accent_hover"],
         )
-        refresh_btn.pack(pady=(0, 10))
+        refresh_btn.pack(anchor="w", padx=22, pady=(0, 18))
 
-        # Stats container (scrollable): bọc toàn bộ nội dung để có thể scroll xuống dưới
-        # NOTE: đặt height để scrollbar hoạt động ổn định trên macOS.
-        self.stats_container = ctk.CTkScrollableFrame(stats_frame)
-        # Giảm padding để nội dung (đặc biệt scroll list) ăn gần hết chiều ngang
-        self.stats_container.pack(fill="both", expand=True, padx=10, pady=10)
-
-        # Bắt scroll wheel/trackpad mượt cho tab Thống kê
+        self.stats_container = ctk.CTkScrollableFrame(
+            stats_frame,
+            fg_color="transparent",
+        )
+        self.stats_container.pack(fill="both", expand=True)
         self._bind_mousewheel_for_scrollable(self.stats_container)
-
-        # Load stats ban đầu
         self.update_stats()
 
     def update_stats(self):
@@ -808,65 +1419,100 @@ class VideoDownloaderApp(ctk.CTk):
         for widget in self.stats_container.winfo_children():
             widget.destroy()
 
-        # ========== ROOT FOLDER INFO ==========
-        root_frame = ctk.CTkFrame(self.stats_container)
-        root_frame.pack(fill="x", padx=20, pady=(10, 5))
+        stats = self.database.get_download_stats()
+        channels = self.database.get_monitored_channels(only_active=False)
+        active_channels = self.database.get_monitored_channels(only_active=True)
 
+        summary_row = ctk.CTkFrame(self.stats_container, fg_color="transparent")
+        summary_row.pack(fill="x", padx=2, pady=(4, 12))
+        for column in range(3):
+            summary_row.grid_columnconfigure(column, weight=1)
+
+        self._create_metric_card(
+            summary_row,
+            "Total downloads",
+            str(stats["total"]),
+            "Tổng số bản ghi video đã đi qua hệ thống local/database.",
+            accent=self.theme["accent"],
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self._create_metric_card(
+            summary_row,
+            "Platform mix",
+            str(len(stats["by_platform"])),
+            "Số nền tảng hiện đang có dữ liệu tải xuống trong kho.",
+            accent=self.theme["success"],
+        ).grid(row=0, column=1, sticky="ew", padx=8)
+        self._create_metric_card(
+            summary_row,
+            "Tracked channels",
+            f"{len(active_channels)}/{len(channels)}",
+            "Tỷ lệ kênh active trên tổng số kênh đã lưu để monitor.",
+            accent=self.theme["warning"],
+        ).grid(row=0, column=2, sticky="ew", padx=(8, 0))
+
+        root_frame = ctk.CTkFrame(
+            self.stats_container,
+            fg_color=self.theme["panel"],
+            corner_radius=28,
+            border_width=1,
+            border_color=self.theme["line"],
+        )
+        root_frame.pack(fill="x", padx=2, pady=(0, 12))
         ctk.CTkLabel(
             root_frame,
-            text="📁 Thư mục lưu hiện tại:",
-            font=ctk.CTkFont(size=14, weight="bold")
-        ).pack(side="left", padx=15, pady=15)
-
-        root_path_label = ctk.CTkLabel(
+            text="Storage root",
+            text_color=self.theme["muted"],
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=22, pady=(18, 4))
+        ctk.CTkLabel(
             root_frame,
             text=self.download_path,
-            text_color="gray",
-            anchor="w"
-        )
-        root_path_label.pack(side="left", fill="x", expand=True, padx=10)
-
-        open_root_btn = ctk.CTkButton(
+            text_color=self.theme["text"],
+            justify="left",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).pack(anchor="w", padx=22)
+        ctk.CTkLabel(
             root_frame,
-            text="📂 Mở",
-            width=80,
-            command=self.open_download_folder
+            text="Cấu trúc đích hiện tại là ROOT/Platform/Channel để việc mở folder và đối soát file rõ ràng hơn.",
+            text_color=self.theme["muted"],
+            wraplength=760,
+            justify="left",
+            font=ctk.CTkFont(size=12),
+        ).pack(anchor="w", padx=22, pady=(6, 14))
+        ctk.CTkButton(
+            root_frame,
+            text="Mo thu muc",
+            width=120,
+            height=36,
+            corner_radius=14,
+            fg_color=self.theme["accent"],
+            hover_color=self.theme["accent_hover"],
+            command=self.open_download_folder,
+        ).pack(anchor="w", padx=22, pady=(0, 18))
+
+        platform_frame = ctk.CTkFrame(
+            self.stats_container,
+            fg_color=self.theme["panel"],
+            corner_radius=28,
+            border_width=1,
+            border_color=self.theme["line"],
         )
-        open_root_btn.pack(side="right", padx=15, pady=10)
-
-        # ========== STATS ==========
-        stats = self.database.get_download_stats()
-
-        # Tổng số video
-        total_frame = ctk.CTkFrame(self.stats_container)
-        total_frame.pack(fill="x", padx=20, pady=10)
-
-        ctk.CTkLabel(
-            total_frame,
-            text="📹 Tổng số video đã tải:",
-            font=ctk.CTkFont(size=16, weight="bold")
-        ).pack(side="left", padx=20, pady=20)
-
-        ctk.CTkLabel(
-            total_frame,
-            text=str(stats['total']),
-            font=ctk.CTkFont(size=32, weight="bold"),
-            text_color="green"
-        ).pack(side="right", padx=20, pady=20)
-
-        # Theo từng nền tảng
-        platform_frame = ctk.CTkFrame(self.stats_container)
-        platform_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        platform_frame.pack(fill="both", expand=True, padx=2, pady=(0, 12))
 
         ctk.CTkLabel(
             platform_frame,
-            text="📊 Phân chia theo nền tảng:",
-            font=ctk.CTkFont(size=14, weight="bold")
-        ).pack(anchor="w", padx=20, pady=(20, 10))
+            text="Platform breakdown",
+            text_color=self.theme["text"],
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(anchor="w", padx=22, pady=(18, 10))
 
         for platform, count in stats['by_platform'].items():
-            pf_frame = ctk.CTkFrame(platform_frame)
-            pf_frame.pack(fill="x", padx=20, pady=5)
+            pf_frame = ctk.CTkFrame(
+                platform_frame,
+                fg_color=self.theme["panel_alt"],
+                corner_radius=18,
+            )
+            pf_frame.pack(fill="x", padx=18, pady=5)
 
             color = SUPPORTED_PLATFORMS.get(platform, {}).get('color', 'gray')
 
@@ -876,52 +1522,60 @@ class VideoDownloaderApp(ctk.CTk):
                 width=100,
                 fg_color=color,
                 corner_radius=5
-            ).pack(side="left", padx=10, pady=10)
+            ).pack(side="left", padx=12, pady=12)
 
             ctk.CTkLabel(
                 pf_frame,
                 text=f"{count} video",
-                font=ctk.CTkFont(size=14)
+                text_color=self.theme["text"],
+                font=ctk.CTkFont(size=14, weight="bold")
             ).pack(side="left", padx=10)
+        if not stats["by_platform"]:
+            ctk.CTkLabel(
+                platform_frame,
+                text="Chưa có dữ liệu tải xuống để hiển thị.",
+                text_color=self.theme["muted"],
+                font=ctk.CTkFont(size=12),
+            ).pack(anchor="w", padx=22, pady=(4, 18))
 
-        # ========== EXPAND FOLDER BY PLATFORM/CHANNEL ==========
-        # dùng ALL channels (cả active + inactive) để thống kê đúng
-        channels = self.database.get_monitored_channels(only_active=False)
-
-        channel_info_frame = ctk.CTkFrame(self.stats_container)
-        channel_info_frame.pack(fill="x", padx=20, pady=(10, 5))
+        channel_info_frame = ctk.CTkFrame(
+            self.stats_container,
+            fg_color=self.theme["panel"],
+            corner_radius=28,
+            border_width=1,
+            border_color=self.theme["line"],
+        )
+        channel_info_frame.pack(fill="x", padx=2, pady=(0, 12))
 
         ctk.CTkLabel(
             channel_info_frame,
-            text=f"👁️ Số kênh đang theo dõi: {len(channels)}",
-            font=ctk.CTkFont(size=14)
-        ).pack(side="left", padx=20, pady=15)
+            text=f"Folder navigator ({len(channels)} channels)",
+            text_color=self.theme["text"],
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(anchor="w", padx=22, pady=(18, 8))
 
         if channels:
-            # NOTE: danh sách kênh có thể rất dài, dùng scrollable frame để tránh tràn UI
-            # Giảm padding 2 bên để danh sách rộng hơn, tránh bị các phần phía trên "ép" gây khó nhìn.
             folders_frame = ctk.CTkScrollableFrame(
-                self.stats_container,
-                height=300
+                channel_info_frame,
+                height=300,
+                fg_color="transparent",
             )
-            folders_frame.pack(fill="both", expand=True, padx=8, pady=(5, 15))
-
-            # Scroll lồng nhau: bind wheel/trackpad để hover vùng danh sách kênh sẽ cuộn vùng đó
+            folders_frame.pack(fill="both", expand=True, padx=12, pady=(0, 12))
             self._bind_mousewheel_for_scrollable(folders_frame)
 
             ctk.CTkLabel(
                 folders_frame,
-                text="📂 Mở nhanh thư mục theo dõi (Platform/Account):",
-                font=ctk.CTkFont(size=14, weight="bold")
-            ).pack(anchor="w", padx=12, pady=(15, 10))
+                text="Mở nhanh thư mục theo dõi theo từng nền tảng và tài khoản:",
+                text_color=self.theme["muted"],
+                font=ctk.CTkFont(size=12, weight="bold")
+            ).pack(anchor="w", padx=12, pady=(12, 10))
 
-            # Render expandable list by platform
             by_platform = {}
             for channel_url, platform, *_ in channels:
                 by_platform.setdefault(platform, []).append(channel_url)
 
             for pf, urls in by_platform.items():
-                section = ctk.CTkFrame(folders_frame)
+                section = ctk.CTkFrame(folders_frame, fg_color=self.theme["panel_alt"], corner_radius=20)
                 section.pack(fill="x", padx=10, pady=6)
 
                 is_open = {"v": False}
@@ -931,51 +1585,79 @@ class VideoDownloaderApp(ctk.CTk):
                     is_open["v"] = not is_open["v"]
                     if is_open["v"]:
                         btn.configure(text="▼")
-                        inner = ctk.CTkFrame(container, fg_color="gray15")
+                        inner = ctk.CTkFrame(container, fg_color=self.theme["panel"])
                         inner.pack(fill="x", padx=10, pady=(0, 10))
                         inner_ref["frame"] = inner
 
                         for u in url_list:
-                            row = ctk.CTkFrame(inner, fg_color="gray20")
+                            row = ctk.CTkFrame(inner, fg_color="#FFFDFC", corner_radius=16)
                             row.pack(fill="x", padx=5, pady=2)
 
                             ch_name = self.downloader.extract_channel_name(u, pf_name)
-                            # Giới hạn độ rộng label để phần URL + nút mở thư mục luôn có chỗ.
-                            ctk.CTkLabel(row, text=f"{ch_name}"[:24], width=160, anchor="w").pack(side="left", padx=10, pady=8)
+                            ctk.CTkLabel(
+                                row,
+                                text=f"{ch_name}"[:24],
+                                width=160,
+                                anchor="w",
+                                text_color=self.theme["text"],
+                                font=ctk.CTkFont(size=12, weight="bold"),
+                            ).pack(side="left", padx=10, pady=10)
                             ctk.CTkLabel(
                                 row,
                                 text=u[:95] + ("..." if len(u) > 95 else ""),
-                                text_color="gray",
+                                text_color=self.theme["muted"],
                                 anchor="w"
                             ).pack(side="left", fill="x", expand=True, padx=10)
 
                             open_btn = ctk.CTkButton(
                                 row,
-                                text="📂",
+                                text="Mo folder",
                                 width=40,
-                                command=lambda cu=u, cp=pf_name: self.open_channel_folder(cu, cp)
+                                command=lambda cu=u, cp=pf_name: self.open_channel_folder(cu, cp),
+                                corner_radius=12,
+                                fg_color=self.theme["accent"],
+                                hover_color=self.theme["accent_hover"],
                             )
-                            open_btn.pack(side="right", padx=10, pady=6)
+                            open_btn.pack(side="right", padx=10, pady=8)
                     else:
                         btn.configure(text="▶")
                         if inner_ref["frame"]:
                             inner_ref["frame"].destroy()
                             inner_ref["frame"] = None
 
-                header = ctk.CTkFrame(section)
+                header = ctk.CTkFrame(section, fg_color="transparent")
                 header.pack(fill="x", padx=10, pady=10)
 
-                btn = ctk.CTkButton(header, text="▶", width=30, fg_color="transparent", hover_color="gray20", command=toggle)
+                btn = ctk.CTkButton(
+                    header,
+                    text="▶",
+                    width=30,
+                    fg_color="transparent",
+                    hover_color=self.theme["accent_soft"],
+                    text_color=self.theme["text"],
+                    command=toggle,
+                )
                 btn.pack(side="left", padx=5)
 
-                ctk.CTkLabel(header, text=f"{pf}", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left", padx=5)
-                ctk.CTkLabel(header, text=f"({len(urls)} kênh)", text_color="gray").pack(side="left", padx=5)
+                ctk.CTkLabel(
+                    header,
+                    text=f"{pf}",
+                    text_color=self.theme["text"],
+                    font=ctk.CTkFont(size=13, weight="bold")
+                ).pack(side="left", padx=5)
+                ctk.CTkLabel(
+                    header,
+                    text=f"({len(urls)} kênh)",
+                    text_color=self.theme["muted"]
+                ).pack(side="left", padx=5)
 
         else:
-            # Không có kênh theo dõi
-            no_folder_frame = ctk.CTkFrame(self.stats_container)
-            no_folder_frame.pack(fill="x", padx=20, pady=(5, 15))
-            ctk.CTkLabel(no_folder_frame, text="ℹ️ Chưa có kênh theo dõi để hiển thị thư mục.", text_color="gray").pack(padx=20, pady=15)
+            ctk.CTkLabel(
+                channel_info_frame,
+                text="Chưa có kênh theo dõi để hiển thị navigator.",
+                text_color=self.theme["muted"]
+            ).pack(anchor="w", padx=22, pady=(0, 20))
+        self.update_shell_snapshot()
 
     # =========================================================
     # Theo dõi kênh + thao tác file/video
@@ -1004,13 +1686,19 @@ class VideoDownloaderApp(ctk.CTk):
             # Nếu DB chưa sẵn sàng, vẫn thử add và để DB throw nếu có
             pass
 
-        success = self.database.add_monitored_channel(channel_url, platform)
+        success = self.database.add_monitored_channel(
+            channel_url,
+            platform,
+            self.channel_logo_path,
+            self.channel_logo_position.get() if hasattr(self, "channel_logo_position") else None,
+        )
         if success:
             self.log_message(f"✅ Đã thêm kênh: {channel_url} ({platform})")
             try:
                 self.channel_url_entry.delete(0, "end")
             except Exception:
                 pass
+            self.channel_logo_path = None
             self.refresh_channel_list()
             messagebox.showinfo("Thành công", "Đã thêm kênh vào danh sách theo dõi!")
         else:
@@ -1035,19 +1723,38 @@ class VideoDownloaderApp(ctk.CTk):
             ctk.CTkLabel(
                 self.channels_scrollframe,
                 text="Chưa có kênh nào được theo dõi",
-                text_color="gray"
+                text_color=self.theme["muted"]
             ).pack(pady=20)
+            if hasattr(self, "monitor_channels_card"):
+                self.monitor_channels_card.value_label.configure(text="0")
+            if hasattr(self, "monitor_active_card"):
+                self.monitor_active_card.value_label.configure(text="0 active")
+            self.update_shell_snapshot()
             return
 
         for channel_url, platform, is_active, logo_path, logo_position in channels:
             self._create_channel_item(channel_url, platform, bool(int(is_active)), logo_path, logo_position)
+        active_channels = self.database.get_monitored_channels(only_active=True)
+        if hasattr(self, "monitor_channels_card"):
+            self.monitor_channels_card.value_label.configure(text=str(len(channels)))
+        if hasattr(self, "monitor_active_card"):
+            self.monitor_active_card.value_label.configure(text=f"{len(active_channels)} active")
+        if hasattr(self, "monitor_interval_card"):
+            self.monitor_interval_card.value_label.configure(text=f"{CHECK_INTERVAL // 60} min")
+        self.update_shell_snapshot()
 
     def _create_channel_item(self, channel_url: str, platform: str, is_active: bool = True, logo_path=None, logo_position=None):
         """Tạo item kênh (expand/collapse + active/inactive + mở folder + xóa)."""
-        channel_container = ctk.CTkFrame(self.channels_scrollframe)
+        channel_container = ctk.CTkFrame(
+            self.channels_scrollframe,
+            fg_color=self.theme["panel_alt"],
+            corner_radius=22,
+            border_width=1,
+            border_color=self.theme["line"],
+        )
         channel_container.pack(fill="x", padx=5, pady=5)
 
-        header_frame = ctk.CTkFrame(channel_container)
+        header_frame = ctk.CTkFrame(channel_container, fg_color="transparent")
         header_frame.pack(fill="x", padx=0, pady=0)
 
         is_expanded = {"value": False}
@@ -1065,10 +1772,14 @@ class VideoDownloaderApp(ctk.CTk):
                     videos_frame_ref["frame"] = None
 
         def on_toggle_active():
-            new_state = bool(active_var.get())
-            self.database.set_channel_active(channel_url, platform, new_state)
-            url_label.configure(text_color=("white" if new_state else "gray"))
-            active_badge.configure(text=("ACTIVE" if new_state else "OFF"), text_color=("#00c853" if new_state else "gray"))
+            new_state = self.database.toggle_channel_active(channel_url, platform)
+            active_var.set(1 if new_state else 0)
+            url_label.configure(text_color=(self.theme["text"] if new_state else self.theme["muted"]))
+            active_badge.configure(
+                text=("ACTIVE" if new_state else "OFF"),
+                text_color=(self.theme["success"] if new_state else self.theme["muted"]),
+            )
+            self.refresh_channel_list()
 
         expand_btn = ctk.CTkButton(
             header_frame,
@@ -1076,7 +1787,8 @@ class VideoDownloaderApp(ctk.CTk):
             width=30,
             command=toggle_expand,
             fg_color="transparent",
-            hover_color="gray20",
+            hover_color=self.theme["accent_soft"],
+            text_color=self.theme["text"],
         )
         expand_btn.pack(side="left", padx=5, pady=5)
 
@@ -1088,7 +1800,7 @@ class VideoDownloaderApp(ctk.CTk):
             header_frame,
             text=("ACTIVE" if is_active else "OFF"),
             width=55,
-            text_color=("#00c853" if is_active else "gray"),
+            text_color=(self.theme["success"] if is_active else self.theme["muted"]),
             anchor="w",
         )
         active_badge.pack(side="left", padx=(0, 6))
@@ -1102,7 +1814,7 @@ class VideoDownloaderApp(ctk.CTk):
             header_frame,
             text=channel_url[:50] + ("..." if len(channel_url) > 50 else ""),
             anchor="w",
-            text_color=("white" if is_active else "gray"),
+            text_color=(self.theme["text"] if is_active else self.theme["muted"]),
         )
         url_label.pack(side="left", fill="x", expand=True, padx=5)
 
@@ -1114,8 +1826,8 @@ class VideoDownloaderApp(ctk.CTk):
             text="📂",
             width=40,
             command=lambda url=channel_url, p=platform: self.open_channel_folder(url, p),
-            fg_color="blue",
-            hover_color="darkblue",
+            fg_color=self.theme["accent"],
+            hover_color=self.theme["accent_hover"],
         ).pack(side="left", padx=2, pady=5)
 
         ctk.CTkButton(
@@ -1129,16 +1841,20 @@ class VideoDownloaderApp(ctk.CTk):
 
     def show_channel_videos(self, parent, channel_url: str, platform: str):
         """Hiển thị danh sách video của kênh (từ DB)."""
-        videos_frame = ctk.CTkFrame(parent, fg_color="gray15")
+        videos_frame = ctk.CTkFrame(parent, fg_color=self.theme["panel"])
         videos_frame.pack(fill="x", padx=10, pady=(0, 5))
 
         videos = self.database.get_videos_by_channel(channel_url, platform)
         if not videos:
-            ctk.CTkLabel(videos_frame, text="Chưa có video nào được tải", text_color="gray").pack(pady=10)
+            ctk.CTkLabel(
+                videos_frame,
+                text="Chưa có video nào được tải",
+                text_color=self.theme["muted"],
+            ).pack(pady=10)
             return videos_frame
 
         for video_id, title, file_path, downloaded_at in videos:
-            video_frame = ctk.CTkFrame(videos_frame, fg_color="gray20")
+            video_frame = ctk.CTkFrame(videos_frame, fg_color="#FFFDFC", corner_radius=16)
             video_frame.pack(fill="x", padx=5, pady=2)
 
             ctk.CTkLabel(video_frame, text="🎬", width=30).pack(side="left", padx=5)
@@ -1148,14 +1864,15 @@ class VideoDownloaderApp(ctk.CTk):
                 text=title[:60] + ("..." if len(title) > 60 else ""),
                 anchor="w",
                 fg_color="transparent",
-                hover_color="gray30",
+                hover_color=self.theme["accent_soft"],
+                text_color=self.theme["text"],
                 command=lambda fp=file_path: self.open_video(fp),
             ).pack(side="left", fill="x", expand=True, padx=5)
 
             ctk.CTkLabel(
                 video_frame,
                 text=(downloaded_at[:16] if downloaded_at else ""),
-                text_color="gray",
+                text_color=self.theme["muted"],
                 width=120,
             ).pack(side="left", padx=5)
 

@@ -5,7 +5,7 @@
 - Hỗ trợ tạo cây thư mục theo cấu trúc local (Platform/Channel/...)
 
 YÊU CẦU:
-- Đặt file credentials.json ở cùng thư mục project (hoặc chỉnh CREDENTIALS_FILE bên dưới).
+- Đặt file credentials trong `config/credentials.json` (ưu tiên) hoặc root project.
 - Cài thư viện: google-api-python-client, google-auth-httplib2, google-auth-oauthlib
 """
 
@@ -24,9 +24,32 @@ from google.oauth2.credentials import Credentials
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 # Các file cấu hình OAuth/token
-BASE_DIR = os.path.dirname(__file__)
-CREDENTIALS_FILE = os.path.join(BASE_DIR, "credentials.json")
-TOKEN_FILE = os.path.join(BASE_DIR, "token.json")
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+CONFIG_DIR = os.path.join(PROJECT_ROOT, "config")
+
+
+def _resolve_credentials_file() -> Optional[str]:
+    """Tìm file credentials theo thứ tự ưu tiên."""
+    env_path = os.getenv("GOOGLE_DRIVE_CREDENTIALS_FILE")
+    candidate_paths = [
+        env_path,
+        os.path.join(CONFIG_DIR, "credentials.json"),
+        os.path.join(CONFIG_DIR, "credential.json"),
+        os.path.join(PROJECT_ROOT, "credentials.json"),
+        os.path.join(os.path.dirname(__file__), "credentials.json"),
+    ]
+    for path in candidate_paths:
+        if path and os.path.exists(path):
+            return path
+    return None
+
+
+def _resolve_token_file() -> str:
+    """Ưu tiên token trong config, fallback tương thích ngược ở core."""
+    legacy_core_token = os.path.join(os.path.dirname(__file__), "token.json")
+    if os.path.exists(legacy_core_token):
+        return legacy_core_token
+    return os.path.join(CONFIG_DIR, "token.json")
 
 
 def get_drive_service():
@@ -35,22 +58,34 @@ def get_drive_service():
     Trả về: googleapiclient.discovery.Resource
     """
     creds: Optional[Credentials] = None
+    token_file = _resolve_token_file()
+    credentials_file = _resolve_credentials_file()
 
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+    if os.path.exists(token_file):
+        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            if not os.path.exists(CREDENTIALS_FILE):
+            if not credentials_file:
+                searched = [
+                    os.getenv("GOOGLE_DRIVE_CREDENTIALS_FILE"),
+                    os.path.join(CONFIG_DIR, "credentials.json"),
+                    os.path.join(CONFIG_DIR, "credential.json"),
+                    os.path.join(PROJECT_ROOT, "credentials.json"),
+                    os.path.join(os.path.dirname(__file__), "credentials.json"),
+                ]
                 raise FileNotFoundError(
-                    f"Không tìm thấy {CREDENTIALS_FILE}. Hãy tải credentials.json từ Google Cloud Console và đặt cạnh project."
+                    "Không tìm thấy credentials file. Đã tìm tại: "
+                    + ", ".join([p for p in searched if p])
+                    + ". Hãy tải credentials.json từ Google Cloud Console và đặt vào thư mục config."
                 )
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(credentials_file, SCOPES)
             creds = flow.run_local_server(port=0)
 
-        with open(TOKEN_FILE, "w", encoding="utf-8") as token:
+        os.makedirs(os.path.dirname(token_file), exist_ok=True)
+        with open(token_file, "w", encoding="utf-8") as token:
             token.write(creds.to_json())
 
     service = build("drive", "v3", credentials=creds)

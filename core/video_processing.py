@@ -618,18 +618,28 @@ def extract_audio_from_video(input_path: str, output_folder: str = None) -> str:
     return str(audio_path) if audio_path and os.path.exists(audio_path) else None
 
 
-def process(input_path: str, output_folder: str = None, overwrite: bool = True) -> str:
+def process(input_path: str, output_folder: str = None, overwrite: bool = True, logo_path: str = None, logo_position: str = None) -> str:
     """
     Chỉnh sửa video (mirror, speed, color, ...), trả về đường dẫn file đã chỉnh sửa.
     Nếu không truyền output_folder sẽ lưu cùng thư mục với input_path.
+    Nếu có logo_path thì chèn logo vào video.
     """
     processor = VideoProcessor()
     in_path = Path(input_path)
     if output_folder is None:
         output_folder = str(in_path.parent)
     out_path = Path(output_folder) / f"{in_path.stem}_processed{in_path.suffix}"
+    # Nếu có logo_path thì chèn logo sau khi process_one
     result = processor.process_one(str(in_path), str(out_path), overwrite=overwrite)
-    return str(result.output_path) if result and os.path.exists(result.output_path) else None
+    processed_path = str(result.output_path) if result and os.path.exists(result.output_path) else None
+    if logo_path and logo_position and processed_path:
+        logo_out = str(Path(output_folder) / f"{in_path.stem}_processed_logo{in_path.suffix}")
+        try:
+            processor.add_logo(processed_path, logo_out, logo_path, position=logo_position, overwrite=True)
+            return logo_out if os.path.exists(logo_out) else processed_path
+        except Exception:
+            return processed_path
+    return processed_path
 
 
 def sanitize_filename(name: str, max_length: int = 20) -> str:

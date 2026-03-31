@@ -567,7 +567,7 @@ class VideoDownloader:
         print("[DEBUG] Channel name unknown for url:", url)
         return "unknown"
 
-    def process_and_upload(self, url: str, split: bool = False, extract_audio: bool = False, progress_callback: Callable = None, quality: str = "best", monitor=None, channel_url: str = None, platform: str = None, log_callback: Callable = None) -> Dict:
+    def process_and_upload(self, url: str, split: bool = False, extract_audio: bool = False, progress_callback: Callable = None, quality: str = "best", monitor=None, channel_url: str = None, platform: str = None, log_callback: Callable = None, logo_path: str = None, logo_position: str = None) -> Dict:
         """
         Luồng chuẩn: Tải video -> Chỉnh sửa -> (Cắt nếu cần) -> (Tách âm nếu chọn) -> Upload file đã chỉnh sửa/cắt và file âm thanh tách ra từ các file này.
         TUYỆT ĐỐI không upload file gốc hoặc tách âm từ file gốc.
@@ -604,8 +604,8 @@ class VideoDownloader:
                             debug_files.append(os.path.join(root, f))
                 print(f"[DEBUG] Không tìm thấy file gốc. Các file mp4 hiện có: {debug_files}")
                 return {'success': False, 'error': 'Không tìm thấy file gốc sau khi tải', 'url': url}
-            # Bước 2: Chỉnh sửa video (mirror, speed, color, ...)
-        file_da_chinh_sua = process(file_goc)
+        # Bước 2: Chỉnh sửa video (mirror, speed, color, ...) VÀ chèn logo nếu có
+        file_da_chinh_sua = process(file_goc, logo_path=logo_path, logo_position=logo_position)
         if not file_da_chinh_sua or not os.path.exists(file_da_chinh_sua):
             return {'success': False, 'error': 'Không tạo được file đã chỉnh sửa', 'url': url}
 
